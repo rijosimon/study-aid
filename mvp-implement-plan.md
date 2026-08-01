@@ -124,26 +124,26 @@ Upload a document. Watch the spinner page. After generation (10–30s), observe 
 
 **Goal:** Users can take a full practice quiz — all questions asked once in order. Multiple choice and true/false are auto-graded; short answers are graded by Claude. Progress is tracked per question.
 
-**Status:** `[ ]` Not started
+**Status:** `[x]` Done
 
 ### Stories
 
-- [ ] **S5.1** Implement `GET /quiz/{session_id}?mode=practice` — renders `quiz.html` with the first question; initialises a new attempt record in the session
-- [ ] **S5.2** Create `templates/quiz.html` — question counter, progress bar, question card area (HTMX swap target), submit button
-- [ ] **S5.3** Create `templates/partials/question.html` — renders a single question card appropriate to its type (radio buttons for MC/TF, textarea for short answer)
-- [ ] **S5.4** Implement `POST /answer/{session_id}` — receives `question_id` + `user_answer`; grades MC/TF instantly; calls Claude for short answer; stores result in session attempt; returns next question partial or redirect to results
-- [ ] **S5.5** Add `grade_short_answer(question, correct_answer, user_answer) -> dict` to `quiz_engine.py` using the grading prompt from `design.md`
-- [ ] **S5.6** After each answer, show inline feedback (correct/incorrect + explanation) before advancing to the next question via HTMX swap
-- [ ] **S5.7** After the last question, redirect to `GET /results/{session_id}`
+- [x] **S5.1** Implement `GET /quiz/{session_id}?mode=practice` — renders `quiz.html` with the first question; initialises a new attempt record in the session
+- [x] **S5.2** Create `templates/quiz.html` — question counter, progress bar, question card area (HTMX swap target), submit button
+- [x] **S5.3** Create `templates/partials/question.html` — renders a single question card appropriate to its type (radio buttons for MC/TF, textarea for short answer)
+- [x] **S5.4** Implement `POST /answer/{session_id}` — receives `question_id` + `user_answer`; grades MC/TF instantly; calls Claude for short answer; stores result in session attempt; returns next question partial or redirect to results
+- [x] **S5.5** Add `grade_short_answer(question, correct_answer, user_answer) -> dict` to `quiz_engine.py` using the grading prompt from `design.md`
+- [x] **S5.6** After each answer, show inline feedback (correct/incorrect + explanation) before advancing to the next question via HTMX swap
+- [x] **S5.7** After the last question, redirect to `GET /results/{session_id}`
 
 ### Testing
 
-- [ ] Unit: MC grading returns `correct=True` for the right option, `correct=False` for wrong
-- [ ] Unit: T/F grading is case-insensitive (`"True"`, `"true"`, `"TRUE"` all match)
-- [ ] Unit: `grade_short_answer()` returns `{"passed": bool, "feedback": str}`
-- [ ] Integration: POST `/answer/{session_id}` for all questions in a session → session attempt is fully populated with answers and scores
-- [ ] Integration: After final answer, response redirects to `/results/{session_id}`
-- [ ] Integration: Answering a question that was already answered in this attempt returns an error (no double-submission)
+- [x] Unit: MC grading returns `correct=True` for the right option, `correct=False` for wrong
+- [x] Unit: T/F grading is case-insensitive (`"True"`, `"true"`, `"TRUE"` all match)
+- [x] Unit: `grade_short_answer()` returns `{"passed": bool, "feedback": str}`
+- [x] Integration: POST `/answer/{session_id}` for all questions in a session → session attempt is fully populated with answers and scores
+- [x] Integration: After final answer, response redirects to `/results/{session_id}`
+- [x] Integration: Answering a question that was already answered in this attempt returns an error (no double-submission)
 
 ### Demo
 

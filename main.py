@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 
 from parsers import ExtractionError, extract_docx, extract_pdf, extract_text
-from quiz_engine import QuizGenerationError, generate_quiz
+from quiz_engine import QuizGenerationError, generate_quiz, grade_choice, grade_short_answer
 from session_store import create_session, get_session, purge_expired_sessions, set_session_cookie
 
 load_dotenv()
@@ -160,3 +160,98 @@ async def generate(request: Request, session_id: str):
         session["_generating"] = False
 
     return Response(headers={"HX-Redirect": f"/quiz/{session_id}"})
+
+
+def _question_context(
+    session_id: str,
+    quiz_questions: list,
+    question: dict,
+    mode: str,
+    feedback: Optional[dict] = None,
+) -> dict:
+    total = len(quiz_questions)
+    number = next(i for i, q in enumerate(quiz_questions) if q["id"] == question["id"]) + 1
+    return {
+        "session_id": session_id,
+        "question": question,
+        "question_number": number,
+        "total_questions": total,
+        "mode": mode,
+        "progress_pct": round((number - 1) / total * 100),
+        "feedback": feedback,
+    }
+
+
+@app.get("/quiz/{session_id}")
+async def quiz(request: Request, session_id: str, mode: str = "practice"):
+    session = get_session(session_id)
+    if session is None:
+        return RedirectResponse(url="/", status_code=303)
+
+    quiz_questions = session.get("quiz")
+    if not quiz_questions:
+        return RedirectResponse(url=f"/generating/{session_id}", status_code=303)
+
+    attempt = {"mode": mode, "answers": {}, "overall_score": None, "concept_scores": None}
+    session.setdefault("attempts", []).append(attempt)
+
+    context = _question_context(session_id, quiz_questions, quiz_questions[0], mode)
+    return templates.TemplateResponse(request, "quiz.html", context)
+
+
+@app.post("/answer/{session_id}")
+async def answer(
+    request: Request,
+    session_id: str,
+    question_id: str = Form(...),
+    user_answer: str = Form(""),
+):
+    session = get_session(session_id)
+    if session is None:
+        return RedirectResponse(url="/", status_code=303)
+
+    quiz_questions = session.get("quiz") or []
+    attempts = session.get("attempts") or []
+    if not quiz_questions or not attempts:
+        return RedirectResponse(url=f"/quiz/{session_id}", status_code=303)
+
+    attempt = attempts[-1]
+    question = next((q for q in quiz_questions if q["id"] == question_id), None)
+    if question is None:
+        return Response(status_code=400, content="Unknown question for this quiz")
+
+    if question_id in attempt["answers"]:
+        return Response(status_code=409, content="This question was already answered")
+
+    if question["type"] == "short_answer":
+        try:
+            grading = await run_in_threadpool(
+                grade_short_answer, question["question"], question["correct_answer"], user_answer
+            )
+            correct = grading["passed"]
+            explanation = grading["feedback"]
+        except Exception:
+            logger.exception("Short-answer grading failed for question %s", question_id)
+            correct = False
+            explanation = "We couldn't grade this automatically; marked as incorrect."
+    else:
+        correct = grade_choice(question, user_answer)
+        explanation = question.get("explanation", "")
+
+    attempt["answers"][question_id] = {
+        "user_answer": user_answer,
+        "correct": correct,
+        "score": 1.0 if correct else 0.0,
+    }
+
+    if len(attempt["answers"]) >= len(quiz_questions):
+        return Response(headers={"HX-Redirect": f"/results/{session_id}"})
+
+    next_question = next(q for q in quiz_questions if q["id"] not in attempt["answers"])
+    feedback = {
+        "correct": correct,
+        "explanation": explanation,
+        "correct_answer": question["correct_answer"],
+    }
+    context = _question_context(session_id, quiz_questions, next_question, attempt["mode"], feedback)
+    return templates.TemplateResponse(request, "partials/question.html", context)
