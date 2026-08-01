@@ -18,6 +18,7 @@ from quiz_engine import (
     generate_quiz,
     grade_choice,
     grade_short_answer,
+    select_evaluation_questions,
     update_failure_counts,
 )
 from session_store import create_session, get_session, purge_expired_sessions, set_session_cookie
@@ -171,22 +172,32 @@ async def generate(request: Request, session_id: str):
 
 def _question_context(
     session_id: str,
-    quiz_questions: list,
+    active_questions: list,
     question: dict,
     mode: str,
+    attempt_number: int,
     feedback: Optional[dict] = None,
 ) -> dict:
-    total = len(quiz_questions)
-    number = next(i for i, q in enumerate(quiz_questions) if q["id"] == question["id"]) + 1
+    total = len(active_questions)
+    number = next(i for i, q in enumerate(active_questions) if q["id"] == question["id"]) + 1
     return {
         "session_id": session_id,
         "question": question,
         "question_number": number,
         "total_questions": total,
         "mode": mode,
+        "attempt_number": attempt_number,
         "progress_pct": round((number - 1) / total * 100),
         "feedback": feedback,
     }
+
+
+def _active_questions(quiz_questions: list, attempt: dict) -> list:
+    """The ordered subset of quiz_questions this attempt covers — the full
+    quiz for practice mode, or the pre-selected list for evaluation mode."""
+    question_ids = attempt.get("question_ids") or [q["id"] for q in quiz_questions]
+    by_id = {q["id"]: q for q in quiz_questions}
+    return [by_id[qid] for qid in question_ids if qid in by_id]
 
 
 @app.get("/quiz/{session_id}")
@@ -199,11 +210,62 @@ async def quiz(request: Request, session_id: str, mode: str = "practice"):
     if not quiz_questions:
         return RedirectResponse(url=f"/generating/{session_id}", status_code=303)
 
-    attempt = {"mode": mode, "answers": {}, "overall_score": None, "concept_scores": None}
+    attempts = session.setdefault("attempts", [])
+    latest = attempts[-1] if attempts else None
+
+    if latest and latest.get("mode") == mode and not latest.get("answers"):
+        # Already initialised for this mode (typically by /retry) and not yet
+        # started — reuse it rather than discarding its question selection.
+        attempt = latest
+    elif mode == "evaluation":
+        # Evaluation attempts must be set up via POST /retry, which knows the
+        # failure_counts needed to select questions.
+        return RedirectResponse(url=f"/results/{session_id}", status_code=303)
+    else:
+        attempt = {
+            "mode": "practice",
+            "answers": {},
+            "overall_score": None,
+            "concept_scores": None,
+            "question_ids": [q["id"] for q in quiz_questions],
+        }
+        attempts.append(attempt)
+
+    active_questions = _active_questions(quiz_questions, attempt)
+    context = _question_context(
+        session_id, active_questions, active_questions[0], attempt["mode"], len(attempts)
+    )
+    return templates.TemplateResponse(request, "quiz.html", context)
+
+
+@app.post("/retry/{session_id}")
+async def retry(session_id: str, mode: str = "practice"):
+    session = get_session(session_id)
+    if session is None:
+        return RedirectResponse(url="/", status_code=303)
+
+    quiz_questions = session.get("quiz") or []
+    if not quiz_questions:
+        return RedirectResponse(url=f"/generating/{session_id}", status_code=303)
+
+    if mode == "evaluation":
+        failure_counts = session.get("failure_counts") or {}
+        selected = select_evaluation_questions(quiz_questions, failure_counts)
+        question_ids = [q["id"] for q in selected]
+    else:
+        mode = "practice"
+        question_ids = [q["id"] for q in quiz_questions]
+
+    attempt = {
+        "mode": mode,
+        "answers": {},
+        "overall_score": None,
+        "concept_scores": None,
+        "question_ids": question_ids,
+    }
     session.setdefault("attempts", []).append(attempt)
 
-    context = _question_context(session_id, quiz_questions, quiz_questions[0], mode)
-    return templates.TemplateResponse(request, "quiz.html", context)
+    return RedirectResponse(url=f"/quiz/{session_id}?mode={mode}", status_code=303)
 
 
 @app.post("/answer/{session_id}")
@@ -223,7 +285,8 @@ async def answer(
         return RedirectResponse(url=f"/quiz/{session_id}", status_code=303)
 
     attempt = attempts[-1]
-    question = next((q for q in quiz_questions if q["id"] == question_id), None)
+    active_questions = _active_questions(quiz_questions, attempt)
+    question = next((q for q in active_questions if q["id"] == question_id), None)
     if question is None:
         return Response(status_code=400, content="Unknown question for this quiz")
 
@@ -251,20 +314,22 @@ async def answer(
         "score": 1.0 if correct else 0.0,
     }
 
-    if len(attempt["answers"]) >= len(quiz_questions):
+    if len(attempt["answers"]) >= len(active_questions):
         scores = calculate_scores(attempt, quiz_questions)
         attempt["overall_score"] = scores["overall_score"]
         attempt["concept_scores"] = scores["concept_scores"]
         update_failure_counts(session.setdefault("failure_counts", {}), attempt)
         return Response(headers={"HX-Redirect": f"/results/{session_id}"})
 
-    next_question = next(q for q in quiz_questions if q["id"] not in attempt["answers"])
+    next_question = next(q for q in active_questions if q["id"] not in attempt["answers"])
     feedback = {
         "correct": correct,
         "explanation": explanation,
         "correct_answer": question["correct_answer"],
     }
-    context = _question_context(session_id, quiz_questions, next_question, attempt["mode"], feedback)
+    context = _question_context(
+        session_id, active_questions, next_question, attempt["mode"], len(attempts), feedback
+    )
     return templates.TemplateResponse(request, "partials/question.html", context)
 
 
@@ -292,7 +357,8 @@ async def results(request: Request, session_id: str):
 
     attempts = session.get("attempts") or []
     if not attempts or attempts[-1].get("overall_score") is None:
-        return RedirectResponse(url=f"/quiz/{session_id}", status_code=303)
+        mode = attempts[-1].get("mode", "practice") if attempts else "practice"
+        return RedirectResponse(url=f"/quiz/{session_id}?mode={mode}", status_code=303)
 
     attempt = attempts[-1]
     overall_score = attempt["overall_score"]

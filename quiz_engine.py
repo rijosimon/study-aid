@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import random
 from typing import Optional
 
 import anthropic
@@ -166,3 +167,46 @@ def update_failure_counts(failure_counts: dict, attempt: dict) -> dict:
         if not answer.get("correct"):
             failure_counts[question_id] = failure_counts.get(question_id, 0) + 1
     return failure_counts
+
+
+def compute_weights(questions: list, failure_counts: dict) -> list:
+    """weight = 1 + failures: never-failed questions get baseline weight 1,
+    a question failed N times gets weight N+1."""
+    return [1 + failure_counts.get(q["id"], 0) for q in questions]
+
+
+def _weighted_sample_without_replacement(rng: random.Random, items: list, weights: list, k: int) -> list:
+    """Efraimidis-Spirakis weighted sampling without replacement: each item
+    gets a random key raised to 1/weight, and the top-k keys win."""
+    keyed = [(rng.random() ** (1.0 / w), item) for item, w in zip(items, weights)]
+    keyed.sort(key=lambda pair: pair[0], reverse=True)
+    return [item for _, item in keyed[:k]]
+
+
+def select_evaluation_questions(
+    quiz: list, failure_counts: dict, seed: Optional[int] = None
+) -> list:
+    """Select N unique questions for an evaluation attempt, weighted toward
+    previously-failed questions. Every question with at least one failure is
+    guaranteed to be included; remaining slots are filled by weighted random
+    sampling from the rest. N = min(total, max(10, failed_count * 2))."""
+    total = len(quiz)
+    failed_ids = {qid for qid, count in failure_counts.items() if count > 0}
+    n = min(total, max(10, len(failed_ids) * 2))
+
+    weights = compute_weights(quiz, failure_counts)
+    rng = random.Random(seed)
+
+    guaranteed = [q for q in quiz if q["id"] in failed_ids]
+    remaining_pool = [(q, w) for q, w in zip(quiz, weights) if q["id"] not in failed_ids]
+
+    slots_left = max(0, n - len(guaranteed))
+    chosen: list = []
+    if slots_left and remaining_pool:
+        pool_questions, pool_weights = zip(*remaining_pool)
+        k = min(slots_left, len(pool_questions))
+        chosen = _weighted_sample_without_replacement(rng, list(pool_questions), list(pool_weights), k)
+
+    selected = guaranteed + chosen
+    rng.shuffle(selected)
+    return selected

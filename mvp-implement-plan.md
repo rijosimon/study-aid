@@ -184,25 +184,25 @@ Complete a practice quiz with a mix of right and wrong answers. View results pag
 
 **Goal:** Users can re-attempt the quiz in evaluation mode, where questions are selected based on past failures. The more a question was missed, the more likely it appears.
 
-**Status:** `[ ]` Not started
+**Status:** `[x]` Done
 
 ### Stories
 
-- [ ] **S7.1** Add `compute_weights(questions, failure_counts) -> list[float]` to `quiz_engine.py` — implements the weighting algorithm from `design.md`
-- [ ] **S7.2** Add `select_evaluation_questions(quiz, failure_counts) -> list[dict]` — uses `compute_weights()` and weighted sampling to select N questions; N = `min(total, max(10, failed_count * 2))`
-- [ ] **S7.3** Implement `POST /retry/{session_id}` — accepts `mode` param; for evaluation mode calls `select_evaluation_questions()`; initialises new attempt; redirects to `/quiz/{session_id}?mode=evaluation`
-- [ ] **S7.4** Update `GET /quiz/{session_id}` to handle `mode=evaluation` — uses the pre-selected question list from the new attempt rather than the full quiz
-- [ ] **S7.5** Update `templates/results.html` — "Evaluation Mode" button posts to `/retry/{session_id}?mode=evaluation`; "Practice Again" posts to `/retry/{session_id}?mode=practice`
-- [ ] **S7.6** Show attempt number and mode label in quiz UI header ("Attempt 2 — Evaluation Mode")
+- [x] **S7.1** Add `compute_weights(questions, failure_counts) -> list[float]` to `quiz_engine.py` — implements the weighting algorithm from `design.md`
+- [x] **S7.2** Add `select_evaluation_questions(quiz, failure_counts) -> list[dict]` — uses `compute_weights()` and weighted sampling to select N questions; N = `min(total, max(10, failed_count * 2))`
+- [x] **S7.3** Implement `POST /retry/{session_id}` — accepts `mode` param; for evaluation mode calls `select_evaluation_questions()`; initialises new attempt; redirects to `/quiz/{session_id}?mode=evaluation`
+- [x] **S7.4** Update `GET /quiz/{session_id}` to handle `mode=evaluation` — uses the pre-selected question list from the new attempt rather than the full quiz
+- [x] **S7.5** Update `templates/results.html` — "Evaluation Mode" button posts to `/retry/{session_id}?mode=evaluation`; "Practice Again" posts to `/retry/{session_id}?mode=practice`
+- [x] **S7.6** Show attempt number and mode label in quiz UI header ("Attempt 2 — Evaluation Mode")
 
 ### Testing
 
-- [ ] Unit: `compute_weights()` returns weight 1 for never-failed questions, weight N+1 for N failures
-- [ ] Unit: `select_evaluation_questions()` always includes all questions that were failed at least once (they have non-zero weight)
-- [ ] Unit: N calculation: 10 failed questions → N=20; 3 failed → N=10 (min floor); 50 total, 30 failed → N=50 (max cap)
-- [ ] Unit: `select_evaluation_questions()` is deterministic given the same seed (for testability)
-- [ ] Integration: After a practice attempt with 5 wrong answers, POST `/retry/{session_id}?mode=evaluation` → new attempt question list heavily weighted toward those 5
-- [ ] Integration: Running two evaluation attempts accumulates failure counts correctly
+- [x] Unit: `compute_weights()` returns weight 1 for never-failed questions, weight N+1 for N failures
+- [x] Unit: `select_evaluation_questions()` always includes all questions that were failed at least once (they have non-zero weight)
+- [x] Unit: N calculation: 10 failed questions → N=20; 3 failed → N=10 (min floor); 50 total, 30 failed → N=50 (max cap)
+- [x] Unit: `select_evaluation_questions()` is deterministic given the same seed (for testability)
+- [x] Integration: After a practice attempt with 5 wrong answers, POST `/retry/{session_id}?mode=evaluation` → new attempt question list heavily weighted toward those 5
+- [x] Integration: Running two evaluation attempts accumulates failure counts correctly
 
 ### Demo
 
