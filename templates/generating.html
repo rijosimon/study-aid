@@ -3,6 +3,12 @@
 {% block title %}Study Aid — Building your quiz{% endblock %}
 
 {% block content %}
+{% if truncated %}
+<div class="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+  Document was truncated to fit AI limits.
+</div>
+{% endif %}
+
 <div class="text-center py-24"
      hx-post="/generate/{{ session_id }}"
      hx-trigger="load, every 2s"

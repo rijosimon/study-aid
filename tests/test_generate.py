@@ -50,7 +50,7 @@ def test_generating_page_redirects_to_landing_for_unknown_session(client):
     resp = client.get("/generating/does-not-exist")
 
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/"
+    assert resp.headers["location"] == "/?flash=session_expired"
 
 
 def test_generate_populates_quiz_and_returns_hx_redirect(client, monkeypatch):
@@ -126,7 +126,7 @@ def test_generate_redirects_to_landing_for_unknown_session(client):
     resp = client.post("/generate/does-not-exist")
 
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/"
+    assert resp.headers["location"] == "/?flash=session_expired"
 
 
 def test_generate_returns_202_without_recalling_claude_when_already_in_progress(client, monkeypatch):

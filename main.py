@@ -1,11 +1,13 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, Request, Response, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -53,10 +55,19 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="templates")
 
+FLASH_MESSAGES = {
+    "session_expired": "Session expired. Please start over.",
+}
+
+
+def _session_expired_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/?flash=session_expired", status_code=303)
+
 
 @app.get("/")
 async def index(request: Request):
-    return templates.TemplateResponse(request, "index.html")
+    flash = FLASH_MESSAGES.get(request.query_params.get("flash", ""))
+    return templates.TemplateResponse(request, "index.html", {"flash": flash})
 
 
 @app.get("/health")
@@ -65,6 +76,7 @@ async def health():
 
 
 FILE_PARSERS = {".pdf": extract_pdf, ".docx": extract_docx}
+MAX_SOURCE_TEXT_CHARS = 80_000
 
 
 async def _extract_source_text(file: Optional[UploadFile], text: Optional[str]) -> str:
@@ -111,8 +123,13 @@ async def ingest(
             status_code=400,
         )
 
+    truncated = len(source_text) > MAX_SOURCE_TEXT_CHARS
+    if truncated:
+        source_text = source_text[:MAX_SOURCE_TEXT_CHARS]
+
     session = create_session()
     session["source_text"] = source_text
+    session["truncated"] = truncated
 
     response = RedirectResponse(url=f"/generating/{session['session_id']}", status_code=303)
     set_session_cookie(response, session["session_id"])
@@ -123,17 +140,21 @@ async def ingest(
 async def generating(request: Request, session_id: str):
     session = get_session(session_id)
     if session is None:
-        return RedirectResponse(url="/", status_code=303)
+        return _session_expired_redirect()
     if session.get("quiz"):
         return RedirectResponse(url=f"/quiz/{session_id}", status_code=303)
-    return templates.TemplateResponse(request, "generating.html", {"session_id": session_id})
+    return templates.TemplateResponse(
+        request,
+        "generating.html",
+        {"session_id": session_id, "truncated": session.get("truncated", False)},
+    )
 
 
 @app.post("/generate/{session_id}")
 async def generate(request: Request, session_id: str):
     session = get_session(session_id)
     if session is None:
-        return RedirectResponse(url="/", status_code=303)
+        return _session_expired_redirect()
 
     if session.get("quiz"):
         return Response(headers={"HX-Redirect": f"/quiz/{session_id}"})
@@ -155,14 +176,20 @@ async def generate(request: Request, session_id: str):
         return templates.TemplateResponse(
             request,
             "partials/generation_error.html",
-            {"message": "We couldn't generate your quiz. Please try again."},
+            {
+                "message": "We couldn't generate your quiz. Please try again.",
+                "retry_url": f"/generating/{session_id}",
+            },
         )
     except Exception:
         logger.exception("Unexpected error while generating quiz for session %s", session_id)
         return templates.TemplateResponse(
             request,
             "partials/generation_error.html",
-            {"message": "Something went wrong while generating your quiz. Please try again."},
+            {
+                "message": "Something went wrong while generating your quiz. Please try again.",
+                "retry_url": f"/generating/{session_id}",
+            },
         )
     finally:
         session["_generating"] = False
@@ -204,7 +231,7 @@ def _active_questions(quiz_questions: list, attempt: dict) -> list:
 async def quiz(request: Request, session_id: str, mode: str = "practice"):
     session = get_session(session_id)
     if session is None:
-        return RedirectResponse(url="/", status_code=303)
+        return _session_expired_redirect()
 
     quiz_questions = session.get("quiz")
     if not quiz_questions:
@@ -242,7 +269,7 @@ async def quiz(request: Request, session_id: str, mode: str = "practice"):
 async def retry(session_id: str, mode: str = "practice"):
     session = get_session(session_id)
     if session is None:
-        return RedirectResponse(url="/", status_code=303)
+        return _session_expired_redirect()
 
     quiz_questions = session.get("quiz") or []
     if not quiz_questions:
@@ -277,7 +304,7 @@ async def answer(
 ):
     session = get_session(session_id)
     if session is None:
-        return RedirectResponse(url="/", status_code=303)
+        return _session_expired_redirect()
 
     quiz_questions = session.get("quiz") or []
     attempts = session.get("attempts") or []
@@ -353,7 +380,7 @@ def _score_text_color(fraction: float) -> str:
 async def results(request: Request, session_id: str):
     session = get_session(session_id)
     if session is None:
-        return RedirectResponse(url="/", status_code=303)
+        return _session_expired_redirect()
 
     attempts = session.get("attempts") or []
     if not attempts or attempts[-1].get("overall_score") is None:
@@ -384,3 +411,15 @@ async def results(request: Request, session_id: str):
         "can_evaluate": can_evaluate,
     }
     return templates.TemplateResponse(request, "results.html", context)
+
+
+@app.get("/debug/session/{session_id}")
+async def debug_session(session_id: str):
+    if os.environ.get("DEBUG", "").lower() != "true":
+        raise HTTPException(status_code=404)
+
+    session = get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404)
+
+    return JSONResponse(jsonable_encoder(session))

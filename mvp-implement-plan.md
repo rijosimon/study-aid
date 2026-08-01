@@ -214,26 +214,26 @@ Do a practice attempt, intentionally fail 3–4 questions on specific concepts. 
 
 **Goal:** The app handles edge cases gracefully, all flows have end-to-end test coverage, and the product is ready for a real user to try.
 
-**Status:** `[ ]` Not started
+**Status:** `[x]` Done
 
 ### Stories
 
-- [ ] **S8.1** Handle expired/missing session gracefully — any route that requires a session and finds none redirects to `/` with a flash message "Session expired. Please start over."
-- [ ] **S8.2** Handle PDF with no extractable text — show error page with message "This PDF appears to contain only images. Please paste the text manually."
-- [ ] **S8.3** Handle Claude API errors (rate limit, timeout, malformed response) — show retry option rather than a crash
-- [ ] **S8.4** Handle very long documents (>50 pages / >100k tokens) — truncate to first 80k characters and show a warning banner: "Document was truncated to fit AI limits."
-- [ ] **S8.5** Write end-to-end integration tests covering the full happy path: ingest PDF → generate quiz → practice mode → results → evaluation mode → results
-- [ ] **S8.6** Write integration tests for all identified error paths (S8.1–S8.4)
-- [ ] **S8.7** Add a `GET /debug/session/{session_id}` endpoint (dev-only, gated by `DEBUG=true` env var) that returns full session state as JSON — useful for demos and debugging
-- [ ] **S8.8** Final README with setup instructions, env var documentation, and how to run locally
+- [x] **S8.1** Handle expired/missing session gracefully — any route that requires a session and finds none redirects to `/` with a flash message "Session expired. Please start over."
+- [x] **S8.2** Handle PDF with no extractable text — show error page with message "This PDF appears to contain only images. Please paste the text manually."
+- [x] **S8.3** Handle Claude API errors (rate limit, timeout, malformed response) — show retry option rather than a crash
+- [x] **S8.4** Handle very long documents (>50 pages / >100k tokens) — truncate to first 80k characters and show a warning banner: "Document was truncated to fit AI limits."
+- [x] **S8.5** Write end-to-end integration tests covering the full happy path: ingest PDF → generate quiz → practice mode → results → evaluation mode → results
+- [x] **S8.6** Write integration tests for all identified error paths (S8.1–S8.4)
+- [x] **S8.7** Add a `GET /debug/session/{session_id}` endpoint (dev-only, gated by `DEBUG=true` env var) that returns full session state as JSON — useful for demos and debugging
+- [x] **S8.8** Final README with setup instructions, env var documentation, and how to run locally
 
 ### Testing
 
-- [ ] E2E: Full happy path from PDF upload to evaluation mode results (automated with `httpx` test client)
-- [ ] E2E: Session expiry flow — expired session cookie → redirect to landing with message
-- [ ] E2E: Image-only PDF → error page renders correctly
-- [ ] E2E: Claude API timeout → retry page shown, no 500 error
-- [ ] Load: 10 concurrent sessions all generating quizzes simultaneously (basic concurrency check)
+- [x] E2E: Full happy path from PDF upload to evaluation mode results (automated with `httpx` test client)
+- [x] E2E: Session expiry flow — expired session cookie → redirect to landing with message
+- [x] E2E: Image-only PDF → error page renders correctly
+- [x] E2E: Claude API timeout → retry page shown, no 500 error
+- [x] Load: 10 concurrent sessions all generating quizzes simultaneously (basic concurrency check)
 
 ### Demo
 
