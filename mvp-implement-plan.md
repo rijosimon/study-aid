@@ -35,23 +35,23 @@ Start server with `uvicorn main:app --reload`. Open browser to `http://localhost
 
 **Goal:** A session store module that creates, retrieves, and expires sessions. Every other epic depends on this — it should be solid and independently testable before anything else touches it.
 
-**Status:** `[ ]` Not started
+**Status:** `[x]` Done
 
 ### Stories
 
-- [ ] **S2.1** Create `session_store.py` — in-memory dict keyed by UUID, with `create_session()`, `get_session()`, `update_session()`, `delete_session()` functions
-- [ ] **S2.2** Add TTL enforcement — sessions expire after 2 hours; expired sessions return `None` from `get_session()`
-- [ ] **S2.3** Add a FastAPI dependency `get_current_session(request)` that reads the `session_id` cookie and returns the session or `None`
-- [ ] **S2.4** Add a `set_session_cookie(response, session_id)` helper used when creating new sessions
-- [ ] **S2.5** Add a background cleanup task (runs every 15 min) to purge expired sessions from memory
+- [x] **S2.1** Create `session_store.py` — in-memory dict keyed by UUID, with `create_session()`, `get_session()`, `update_session()`, `delete_session()` functions
+- [x] **S2.2** Add TTL enforcement — sessions expire after 2 hours; expired sessions return `None` from `get_session()`
+- [x] **S2.3** Add a FastAPI dependency `get_current_session(request)` that reads the `session_id` cookie and returns the session or `None`
+- [x] **S2.4** Add a `set_session_cookie(response, session_id)` helper used when creating new sessions
+- [x] **S2.5** Add a background cleanup task (runs every 15 min) to purge expired sessions from memory
 
 ### Testing
 
-- [ ] Unit: `create_session()` returns a valid UUID and stores data
-- [ ] Unit: `get_session()` returns `None` for unknown session IDs
-- [ ] Unit: `get_session()` returns `None` for sessions past their TTL
-- [ ] Unit: `update_session()` merges data without overwriting unrelated keys
-- [ ] Integration: Cookie is set on first request; subsequent requests read the same session
+- [x] Unit: `create_session()` returns a valid UUID and stores data
+- [x] Unit: `get_session()` returns `None` for unknown session IDs
+- [x] Unit: `get_session()` returns `None` for sessions past their TTL
+- [x] Unit: `update_session()` merges data without overwriting unrelated keys
+- [x] Integration: Cookie is set on first request; subsequent requests read the same session
 
 ### Demo
 
