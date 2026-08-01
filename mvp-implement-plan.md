@@ -63,25 +63,25 @@ Using `httpx` or the browser dev tools: create a session via a test endpoint, co
 
 **Goal:** Users can upload a PDF, DOCX, or paste plain text. The extracted text is stored in the session. This is the entry point to the product.
 
-**Status:** `[ ]` Not started
+**Status:** `[x]` Done
 
 ### Stories
 
-- [ ] **S3.1** Create `parsers.py` — `extract_pdf(file_bytes) -> str`, `extract_docx(file_bytes) -> str`, `extract_text(raw: str) -> str`
-- [ ] **S3.2** Implement `POST /ingest` — accept `multipart/form-data` (file upload) or form field (pasted text); detect type; call appropriate parser
-- [ ] **S3.3** Create session on ingest; store `source_text` in session; redirect to `/generating/{session_id}`
-- [ ] **S3.4** Update `templates/index.html` — working file upload input (accept `.pdf`, `.docx`) + textarea for paste, single submit button
-- [ ] **S3.5** Add error handling for: empty file, unsupported file type, PDF with no extractable text (images-only), text under 50 characters
-- [ ] **S3.6** Create `templates/error.html` — simple error page with message and "Try again" link back to `/`
+- [x] **S3.1** Create `parsers.py` — `extract_pdf(file_bytes) -> str`, `extract_docx(file_bytes) -> str`, `extract_text(raw: str) -> str`
+- [x] **S3.2** Implement `POST /ingest` — accept `multipart/form-data` (file upload) or form field (pasted text); detect type; call appropriate parser
+- [x] **S3.3** Create session on ingest; store `source_text` in session; redirect to `/generating/{session_id}`
+- [x] **S3.4** Update `templates/index.html` — working file upload input (accept `.pdf`, `.docx`) + textarea for paste, single submit button
+- [x] **S3.5** Add error handling for: empty file, unsupported file type, PDF with no extractable text (images-only), text under 50 characters
+- [x] **S3.6** Create `templates/error.html` — simple error page with message and "Try again" link back to `/`
 
 ### Testing
 
-- [ ] Unit: `extract_pdf()` returns non-empty string from a sample PDF
-- [ ] Unit: `extract_docx()` returns non-empty string from a sample DOCX
-- [ ] Unit: `extract_pdf()` raises a clear exception for an image-only PDF
-- [ ] Unit: Empty string input to `extract_text()` raises validation error
-- [ ] Integration: POST to `/ingest` with a PDF file → session created → redirects to `/generating/{session_id}`
-- [ ] Integration: POST to `/ingest` with unsupported file type → redirects to error page
+- [x] Unit: `extract_pdf()` returns non-empty string from a sample PDF
+- [x] Unit: `extract_docx()` returns non-empty string from a sample DOCX
+- [x] Unit: `extract_pdf()` raises a clear exception for an image-only PDF
+- [x] Unit: Empty string input to `extract_text()` raises validation error
+- [x] Integration: POST to `/ingest` with a PDF file → session created → redirects to `/generating/{session_id}`
+- [x] Integration: POST to `/ingest` with unsupported file type → redirects to error page
 
 ### Demo
 
