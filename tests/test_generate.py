@@ -91,7 +91,7 @@ def test_generating_page_redirects_to_quiz_once_generated(client, monkeypatch):
     assert resp.headers["location"] == f"/quiz/{session_id}"
 
 
-def test_generate_renders_error_page_on_generation_failure(client, monkeypatch):
+def test_generate_renders_inline_error_partial_on_generation_failure(client, monkeypatch):
     session_id = _create_session(client)
 
     def _raise(text):
@@ -101,8 +101,25 @@ def test_generate_renders_error_page_on_generation_failure(client, monkeypatch):
 
     resp = client.post(f"/generate/{session_id}")
 
-    assert resp.status_code == 502
+    # 200, not an error status: htmx only auto-swaps 2xx responses by
+    # default, and this partial needs to swap into the spinner to be seen.
+    assert resp.status_code == 200
     assert "generate your quiz" in resp.text.lower()
+    assert "<html" not in resp.text.lower()  # partial, not the full error page
+
+
+def test_generate_renders_inline_error_partial_on_unexpected_exception(client, monkeypatch):
+    session_id = _create_session(client)
+
+    def _raise(text):
+        raise TypeError("no api key configured")
+
+    monkeypatch.setattr(main, "generate_quiz", _raise)
+
+    resp = client.post(f"/generate/{session_id}")
+
+    assert resp.status_code == 200
+    assert "something went wrong" in resp.text.lower()
 
 
 def test_generate_redirects_to_landing_for_unknown_session(client):
@@ -122,6 +139,7 @@ def test_generate_returns_202_without_recalling_claude_when_already_in_progress(
     resp = client.post(f"/generate/{session_id}")
 
     assert resp.status_code == 202
+    assert resp.headers["hx-reswap"] == "none"
     assert len(calls) == 0
 
 
