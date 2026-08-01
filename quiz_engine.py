@@ -9,6 +9,11 @@ logger = logging.getLogger("study_aid")
 
 MODEL = os.environ.get("QUIZ_MODEL", "claude-haiku-4-5")
 MAX_TOKENS = 8000
+GRADING_MAX_TOKENS = 300
+
+GRADING_SYSTEM_PROMPT = (
+    "You are grading a student's short-answer quiz response. Return valid JSON only."
+)
 
 SYSTEM_PROMPT = (
     "You are a study quiz generator. Given source material, produce a "
@@ -98,3 +103,35 @@ def generate_quiz(source_text: str, client: Optional[anthropic.Anthropic] = None
             logger.warning("Quiz generation attempt %d failed: %s", attempt + 1, exc)
 
     raise QuizGenerationError(f"Claude returned malformed quiz JSON after retry: {last_error}")
+
+
+def grade_choice(question: dict, user_answer: str) -> bool:
+    """Grade a multiple_choice or true_false answer by exact (case/whitespace
+    insensitive) match against the question's correct_answer."""
+    correct_answer = (question.get("correct_answer") or "").strip().lower()
+    given = (user_answer or "").strip().lower()
+    return given == correct_answer
+
+
+def grade_short_answer(
+    question: str,
+    correct_answer: str,
+    user_answer: str,
+    client: Optional[anthropic.Anthropic] = None,
+) -> dict:
+    client = client or anthropic.Anthropic()
+    prompt = (
+        f"Question: {question}\n"
+        f"Correct answer: {correct_answer}\n"
+        f"User's answer: {user_answer}\n\n"
+        'Grade the user\'s answer. Reply with JSON: {"passed": true|false, "feedback": "one sentence"}.'
+    )
+    response = client.messages.create(
+        model=MODEL,
+        max_tokens=GRADING_MAX_TOKENS,
+        system=GRADING_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw_text = next((b.text for b in response.content if b.type == "text"), "")
+    data = json.loads(_strip_code_fence(raw_text))
+    return {"passed": bool(data["passed"]), "feedback": str(data["feedback"])}
