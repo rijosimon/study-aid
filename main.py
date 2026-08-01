@@ -134,8 +134,10 @@ async def generate(request: Request, session_id: str):
         # Another poll already kicked off generation for this session; the
         # Claude call runs off the event loop, so overlapping HTMX polls can
         # arrive before it finishes. Tell this one there's nothing to do yet
-        # rather than starting a second (paid) generation call.
-        return Response(status_code=202)
+        # rather than starting a second (paid) generation call. HX-Reswap:
+        # none stops htmx from swapping this empty body into the spinner
+        # (it would otherwise wipe out the polling element and stall it).
+        return Response(status_code=202, headers={"HX-Reswap": "none"})
 
     session["_generating"] = True
     try:
@@ -144,9 +146,15 @@ async def generate(request: Request, session_id: str):
         logger.exception("Quiz generation failed for session %s", session_id)
         return templates.TemplateResponse(
             request,
-            "error.html",
+            "partials/generation_error.html",
             {"message": "We couldn't generate your quiz. Please try again."},
-            status_code=502,
+        )
+    except Exception:
+        logger.exception("Unexpected error while generating quiz for session %s", session_id)
+        return templates.TemplateResponse(
+            request,
+            "partials/generation_error.html",
+            {"message": "Something went wrong while generating your quiz. Please try again."},
         )
     finally:
         session["_generating"] = False
