@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -13,6 +14,8 @@ from parsers import ExtractionError, extract_docx, extract_pdf, extract_text
 from session_store import create_session, purge_expired_sessions, set_session_cookie
 
 load_dotenv()
+
+logger = logging.getLogger("study_aid")
 
 CLEANUP_INTERVAL_SECONDS = 15 * 60
 
@@ -82,6 +85,20 @@ async def ingest(
     except ExtractionError as exc:
         return templates.TemplateResponse(
             request, "error.html", {"message": str(exc)}, status_code=400
+        )
+    except Exception:
+        logger.exception("Unexpected error while parsing uploaded file")
+        return templates.TemplateResponse(
+            request,
+            "error.html",
+            {
+                "message": (
+                    "We couldn't read that file. It may be corrupted, password-protected, "
+                    "or in an unsupported format. Please try a different file or paste the "
+                    "text instead."
+                )
+            },
+            status_code=400,
         )
 
     session = create_session()

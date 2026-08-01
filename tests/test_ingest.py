@@ -96,3 +96,13 @@ def test_ingest_with_neither_file_nor_text_renders_error_page(client):
 
     assert resp.status_code == 400
     assert "upload a file or paste" in resp.text.lower()
+
+
+def test_ingest_corrupted_pdf_renders_error_page_instead_of_crashing(client):
+    resp = client.post(
+        "/ingest",
+        files={"file": ("broken.pdf", b"not actually a pdf file", "application/pdf")},
+    )
+
+    assert resp.status_code == 400
+    assert "corrupted" in resp.text.lower()
