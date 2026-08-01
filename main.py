@@ -4,14 +4,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import FastAPI, File, Form, Request, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 
 from parsers import ExtractionError, extract_docx, extract_pdf, extract_text
-from session_store import create_session, purge_expired_sessions, set_session_cookie
+from quiz_engine import QuizGenerationError, generate_quiz
+from session_store import create_session, get_session, purge_expired_sessions, set_session_cookie
 
 load_dotenv()
 
@@ -107,3 +109,54 @@ async def ingest(
     response = RedirectResponse(url=f"/generating/{session['session_id']}", status_code=303)
     set_session_cookie(response, session["session_id"])
     return response
+
+
+@app.get("/generating/{session_id}")
+async def generating(request: Request, session_id: str):
+    session = get_session(session_id)
+    if session is None:
+        return RedirectResponse(url="/", status_code=303)
+    if session.get("quiz"):
+        return RedirectResponse(url=f"/quiz/{session_id}", status_code=303)
+    return templates.TemplateResponse(request, "generating.html", {"session_id": session_id})
+
+
+@app.post("/generate/{session_id}")
+async def generate(request: Request, session_id: str):
+    session = get_session(session_id)
+    if session is None:
+        return RedirectResponse(url="/", status_code=303)
+
+    if session.get("quiz"):
+        return Response(headers={"HX-Redirect": f"/quiz/{session_id}"})
+
+    if session.get("_generating"):
+        # Another poll already kicked off generation for this session; the
+        # Claude call runs off the event loop, so overlapping HTMX polls can
+        # arrive before it finishes. Tell this one there's nothing to do yet
+        # rather than starting a second (paid) generation call. HX-Reswap:
+        # none stops htmx from swapping this empty body into the spinner
+        # (it would otherwise wipe out the polling element and stall it).
+        return Response(status_code=202, headers={"HX-Reswap": "none"})
+
+    session["_generating"] = True
+    try:
+        session["quiz"] = await run_in_threadpool(generate_quiz, session["source_text"])
+    except QuizGenerationError:
+        logger.exception("Quiz generation failed for session %s", session_id)
+        return templates.TemplateResponse(
+            request,
+            "partials/generation_error.html",
+            {"message": "We couldn't generate your quiz. Please try again."},
+        )
+    except Exception:
+        logger.exception("Unexpected error while generating quiz for session %s", session_id)
+        return templates.TemplateResponse(
+            request,
+            "partials/generation_error.html",
+            {"message": "Something went wrong while generating your quiz. Please try again."},
+        )
+    finally:
+        session["_generating"] = False
+
+    return Response(headers={"HX-Redirect": f"/quiz/{session_id}"})

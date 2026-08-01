@@ -93,26 +93,26 @@ Open landing page. Upload a 2-page PDF. Confirm redirect to `/generating/{sessio
 
 **Goal:** Claude reads the ingested text and returns a structured quiz stored in the session. Includes a loading/polling UI while generation is in progress.
 
-**Status:** `[ ]` Not started
+**Status:** `[x]` Done
 
 ### Stories
 
-- [ ] **S4.1** Create `quiz_engine.py` — `generate_quiz(source_text: str) -> list[dict]` that calls Claude with the generation prompt and parses the JSON response
-- [ ] **S4.2** Implement the Claude system prompt and user prompt (see `design.md` Claude Integration section)
-- [ ] **S4.3** Add JSON schema validation of Claude's output — ensure all required fields are present; retry once if malformed
-- [ ] **S4.4** Implement `GET /generating/{session_id}` — renders `generating.html` which HTMX-polls `POST /generate/{session_id}` every 2 seconds
-- [ ] **S4.5** Implement `POST /generate/{session_id}` — if quiz not yet generated, calls `generate_quiz()`, stores result in session, returns HTMX redirect to `/quiz/{session_id}`; if already generated, redirects immediately
-- [ ] **S4.6** Create `templates/generating.html` — spinner + "Building your quiz…" message with HTMX polling via `hx-trigger="every 2s"`
-- [ ] **S4.7** Store quiz in session as `quiz: list[dict]` and initialise `failure_counts: {}` and `attempts: []`
+- [x] **S4.1** Create `quiz_engine.py` — `generate_quiz(source_text: str) -> list[dict]` that calls Claude with the generation prompt and parses the JSON response
+- [x] **S4.2** Implement the Claude system prompt and user prompt (see `design.md` Claude Integration section)
+- [x] **S4.3** Add JSON schema validation of Claude's output — ensure all required fields are present; retry once if malformed
+- [x] **S4.4** Implement `GET /generating/{session_id}` — renders `generating.html` which HTMX-polls `POST /generate/{session_id}` every 2 seconds
+- [x] **S4.5** Implement `POST /generate/{session_id}` — if quiz not yet generated, calls `generate_quiz()`, stores result in session, returns HTMX redirect to `/quiz/{session_id}`; if already generated, redirects immediately
+- [x] **S4.6** Create `templates/generating.html` — spinner + "Building your quiz…" message with HTMX polling via `hx-trigger="every 2s"`
+- [x] **S4.7** Store quiz in session as `quiz: list[dict]` and initialise `failure_counts: {}` and `attempts: []`
 
 ### Testing
 
-- [ ] Unit: `generate_quiz()` returns a list of dicts with required fields (`id`, `concept`, `type`, `question`, `correct_answer`)
-- [ ] Unit: `generate_quiz()` handles malformed JSON from Claude by retrying once
-- [ ] Unit: Multiple choice questions always have `options` list with 4 items
-- [ ] Unit: Short answer questions have no `options` field
-- [ ] Integration: POST `/ingest` → GET `/generating/{session_id}` → POST `/generate/{session_id}` → session contains quiz with ≥1 question
-- [ ] Integration: Calling `/generate/{session_id}` a second time does not re-call Claude (idempotent)
+- [x] Unit: `generate_quiz()` returns a list of dicts with required fields (`id`, `concept`, `type`, `question`, `correct_answer`)
+- [x] Unit: `generate_quiz()` handles malformed JSON from Claude by retrying once
+- [x] Unit: Multiple choice questions always have `options` list with 4 items
+- [x] Unit: Short answer questions have no `options` field
+- [x] Integration: POST `/ingest` → GET `/generating/{session_id}` → POST `/generate/{session_id}` → session contains quiz with ≥1 question
+- [x] Integration: Calling `/generate/{session_id}` a second time does not re-call Claude (idempotent)
 
 ### Demo
 
