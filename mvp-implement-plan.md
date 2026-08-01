@@ -23,7 +23,7 @@
 
 - [x] `GET /health` returns `{"status": "ok"}` with HTTP 200
 - [x] `GET /` renders `index.html` without errors
-- [ ] Tailwind and HTMX load correctly in the browser (check network tab)
+- [x] Tailwind and HTMX load correctly in the browser (check network tab)
 
 ### Demo
 
