@@ -3,6 +3,12 @@
 {% block title %}Study Aid — Upload Material{% endblock %}
 
 {% block content %}
+{% if flash %}
+<div class="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+  {{ flash }}
+</div>
+{% endif %}
+
 <div class="text-center mb-10">
   <h1 class="text-3xl font-bold text-gray-900 mb-2">Build a quiz from your study material</h1>
   <p class="text-gray-500">Upload a PDF or Word doc, or paste text directly. Claude will generate a personalised quiz.</p>

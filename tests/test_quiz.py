@@ -84,7 +84,7 @@ def test_quiz_page_redirects_to_landing_for_unknown_session(client):
     resp = client.get("/quiz/does-not-exist")
 
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/"
+    assert resp.headers["location"] == "/?flash=session_expired"
 
 
 def test_answer_correct_mc_returns_next_question_with_feedback(client):
@@ -182,7 +182,7 @@ def test_answer_unknown_session_redirects_to_landing(client):
     resp = client.post("/answer/does-not-exist", data={"question_id": "q1", "user_answer": "x"})
 
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/"
+    assert resp.headers["location"] == "/?flash=session_expired"
 
 
 def test_full_practice_quiz_walkthrough_populates_all_answers(client, monkeypatch):

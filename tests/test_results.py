@@ -90,7 +90,7 @@ def test_results_redirects_to_landing_for_unknown_session(client):
     resp = client.get("/results/does-not-exist")
 
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/"
+    assert resp.headers["location"] == "/?flash=session_expired"
 
 
 def test_results_evaluation_mode_enabled_when_a_question_was_missed(client):
