@@ -17,15 +17,19 @@
 </div>
 
 <div class="flex gap-4">
-  <a href="/quiz/{{ session_id }}?mode=practice"
-    class="flex-1 text-center bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors">
-    Practice Again
-  </a>
+  <form method="post" action="/retry/{{ session_id }}?mode=practice" class="flex-1">
+    <button type="submit"
+      class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors">
+      Practice Again
+    </button>
+  </form>
   {% if can_evaluate %}
-  <a href="/quiz/{{ session_id }}?mode=evaluation"
-    class="flex-1 text-center bg-white border border-gray-300 hover:border-gray-400 text-gray-700 font-semibold py-3 px-6 rounded-xl transition-colors">
-    Evaluation Mode
-  </a>
+  <form method="post" action="/retry/{{ session_id }}?mode=evaluation" class="flex-1">
+    <button type="submit"
+      class="w-full bg-white border border-gray-300 hover:border-gray-400 text-gray-700 font-semibold py-3 px-6 rounded-xl transition-colors">
+      Evaluation Mode
+    </button>
+  </form>
   {% else %}
   <span class="flex-1 text-center bg-gray-100 text-gray-400 font-semibold py-3 px-6 rounded-xl cursor-not-allowed"
     title="No questions were missed — nothing to focus an evaluation round on yet">

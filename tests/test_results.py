@@ -83,7 +83,7 @@ def test_results_redirects_to_quiz_when_no_completed_attempt(client):
     resp = client.get(f"/results/{session_id}")
 
     assert resp.status_code == 303
-    assert resp.headers["location"] == f"/quiz/{session_id}"
+    assert resp.headers["location"] == f"/quiz/{session_id}?mode=practice"
 
 
 def test_results_redirects_to_landing_for_unknown_session(client):
@@ -99,7 +99,7 @@ def test_results_evaluation_mode_enabled_when_a_question_was_missed(client):
 
     resp = client.get(f"/results/{session_id}")
 
-    assert f'href="/quiz/{session_id}?mode=evaluation"' in resp.text
+    assert f'action="/retry/{session_id}?mode=evaluation"' in resp.text
 
 
 def test_results_evaluation_mode_disabled_when_all_correct(client):
@@ -108,7 +108,7 @@ def test_results_evaluation_mode_disabled_when_all_correct(client):
 
     resp = client.get(f"/results/{session_id}")
 
-    assert f'href="/quiz/{session_id}?mode=evaluation"' not in resp.text
+    assert f'action="/retry/{session_id}?mode=evaluation"' not in resp.text
     assert "cursor-not-allowed" in resp.text
 
 
