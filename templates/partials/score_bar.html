@@ -1,0 +1,9 @@
+<div class="mb-3">
+  <div class="flex justify-between text-sm mb-1">
+    <span class="text-gray-700 font-medium">{{ bar.concept }}</span>
+    <span class="text-gray-500">{{ bar.percent }}%</span>
+  </div>
+  <div class="w-full bg-gray-200 rounded-full h-2.5">
+    <div class="h-2.5 rounded-full {{ bar.color_class }}" style="width: {{ bar.percent }}%"></div>
+  </div>
+</div>
