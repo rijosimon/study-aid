@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, File, Form, Request, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -126,16 +127,28 @@ async def generate(request: Request, session_id: str):
     if session is None:
         return RedirectResponse(url="/", status_code=303)
 
-    if not session.get("quiz"):
-        try:
-            session["quiz"] = generate_quiz(session["source_text"])
-        except QuizGenerationError:
-            logger.exception("Quiz generation failed for session %s", session_id)
-            return templates.TemplateResponse(
-                request,
-                "error.html",
-                {"message": "We couldn't generate your quiz. Please try again."},
-                status_code=502,
-            )
+    if session.get("quiz"):
+        return Response(headers={"HX-Redirect": f"/quiz/{session_id}"})
+
+    if session.get("_generating"):
+        # Another poll already kicked off generation for this session; the
+        # Claude call runs off the event loop, so overlapping HTMX polls can
+        # arrive before it finishes. Tell this one there's nothing to do yet
+        # rather than starting a second (paid) generation call.
+        return Response(status_code=202)
+
+    session["_generating"] = True
+    try:
+        session["quiz"] = await run_in_threadpool(generate_quiz, session["source_text"])
+    except QuizGenerationError:
+        logger.exception("Quiz generation failed for session %s", session_id)
+        return templates.TemplateResponse(
+            request,
+            "error.html",
+            {"message": "We couldn't generate your quiz. Please try again."},
+            status_code=502,
+        )
+    finally:
+        session["_generating"] = False
 
     return Response(headers={"HX-Redirect": f"/quiz/{session_id}"})

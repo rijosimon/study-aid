@@ -110,3 +110,29 @@ def test_generate_redirects_to_landing_for_unknown_session(client):
 
     assert resp.status_code == 303
     assert resp.headers["location"] == "/"
+
+
+def test_generate_returns_202_without_recalling_claude_when_already_in_progress(client, monkeypatch):
+    session_id = _create_session(client)
+    calls = []
+    monkeypatch.setattr(main, "generate_quiz", lambda text: (calls.append(text), SAMPLE_QUIZ)[1])
+    session = session_store.get_session(session_id)
+    session["_generating"] = True
+
+    resp = client.post(f"/generate/{session_id}")
+
+    assert resp.status_code == 202
+    assert len(calls) == 0
+
+
+def test_generate_clears_in_progress_flag_after_failure(client, monkeypatch):
+    session_id = _create_session(client)
+
+    def _raise(text):
+        raise QuizGenerationError("boom")
+
+    monkeypatch.setattr(main, "generate_quiz", _raise)
+    client.post(f"/generate/{session_id}")
+
+    session = session_store.get_session(session_id)
+    assert session["_generating"] is False
