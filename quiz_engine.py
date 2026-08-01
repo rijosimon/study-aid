@@ -7,7 +7,7 @@ import anthropic
 
 logger = logging.getLogger("study_aid")
 
-MODEL = os.environ.get("QUIZ_MODEL", "claude-opus-4-8")
+MODEL = os.environ.get("QUIZ_MODEL", "claude-haiku-4-5")
 MAX_TOKENS = 8000
 
 SYSTEM_PROMPT = (
