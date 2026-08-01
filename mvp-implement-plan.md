@@ -8,21 +8,21 @@
 
 **Goal:** A running FastAPI server with Jinja2 templating, Tailwind CSS, and a landing page shell. Nothing functional yet — just the skeleton every other epic builds on.
 
-**Status:** `[ ]` Not started
+**Status:** `[x]` Done
 
 ### Stories
 
-- [ ] **S1.1** Create `requirements.txt` with all dependencies (`fastapi`, `uvicorn`, `jinja2`, `python-multipart`, `pypdf`, `python-docx`, `anthropic`, `python-dotenv`)
-- [ ] **S1.2** Create `main.py` — FastAPI app with a `GET /` route and `GET /health` route
-- [ ] **S1.3** Create `templates/base.html` — HTML shell that loads HTMX (CDN) and Tailwind CSS (CDN)
-- [ ] **S1.4** Create `templates/index.html` — Landing page (upload form placeholder + paste textarea placeholder)
-- [ ] **S1.5** Create `.env.example` documenting required env vars (`ANTHROPIC_API_KEY`)
-- [ ] **S1.6** Mount `static/` directory in FastAPI for any custom CSS/JS assets
+- [x] **S1.1** Create `requirements.txt` with all dependencies (`fastapi`, `uvicorn`, `jinja2`, `python-multipart`, `pypdf`, `python-docx`, `anthropic`, `python-dotenv`)
+- [x] **S1.2** Create `main.py` — FastAPI app with a `GET /` route and `GET /health` route
+- [x] **S1.3** Create `templates/base.html` — HTML shell that loads HTMX (CDN) and Tailwind CSS (CDN)
+- [x] **S1.4** Create `templates/index.html` — Landing page (upload form placeholder + paste textarea placeholder)
+- [x] **S1.5** Create `.env.example` documenting required env vars (`ANTHROPIC_API_KEY`)
+- [x] **S1.6** Mount `static/` directory in FastAPI for any custom CSS/JS assets
 
 ### Testing
 
-- [ ] `GET /health` returns `{"status": "ok"}` with HTTP 200
-- [ ] `GET /` renders `index.html` without errors
+- [x] `GET /health` returns `{"status": "ok"}` with HTTP 200
+- [x] `GET /` renders `index.html` without errors
 - [ ] Tailwind and HTMX load correctly in the browser (check network tab)
 
 ### Demo
