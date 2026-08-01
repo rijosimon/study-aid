@@ -135,3 +135,34 @@ def grade_short_answer(
     raw_text = next((b.text for b in response.content if b.type == "text"), "")
     data = json.loads(_strip_code_fence(raw_text))
     return {"passed": bool(data["passed"]), "feedback": str(data["feedback"])}
+
+
+def calculate_scores(attempt: dict, quiz: list) -> dict:
+    """Compute overall_score and concept_scores (both 0.0-1.0 fractions) from
+    an attempt's answers, scoped to the questions actually answered in it."""
+    answers = attempt.get("answers") or {}
+    if not answers:
+        return {"overall_score": 0.0, "concept_scores": {}}
+
+    overall_score = sum(a["score"] for a in answers.values()) / len(answers)
+
+    concept_lookup = {q["id"]: q["concept"] for q in quiz}
+    concept_totals: dict[str, list] = {}
+    for question_id, answer in answers.items():
+        concept = concept_lookup.get(question_id, "Unknown")
+        concept_totals.setdefault(concept, []).append(answer["score"])
+
+    concept_scores = {
+        concept: sum(scores) / len(scores) for concept, scores in concept_totals.items()
+    }
+
+    return {"overall_score": overall_score, "concept_scores": concept_scores}
+
+
+def update_failure_counts(failure_counts: dict, attempt: dict) -> dict:
+    """Increment failure_counts[question_id] by 1 for each wrong answer in
+    the attempt. Cumulative across attempts — call once per completed attempt."""
+    for question_id, answer in (attempt.get("answers") or {}).items():
+        if not answer.get("correct"):
+            failure_counts[question_id] = failure_counts.get(question_id, 0) + 1
+    return failure_counts

@@ -155,24 +155,24 @@ Take a practice quiz end-to-end. Answer a mix of correct and incorrect answers i
 
 **Goal:** A results page showing overall familiarity score and per-concept breakdown. Sets the foundation for evaluation mode weighting.
 
-**Status:** `[ ]` Not started
+**Status:** `[x]` Done
 
 ### Stories
 
-- [ ] **S6.1** Add `calculate_scores(attempt: dict, quiz: list) -> dict` to `quiz_engine.py` — returns `overall_score` (%) and `concept_scores` dict
-- [ ] **S6.2** Call `calculate_scores()` when the last answer is submitted; store results in the attempt record and update `failure_counts` in the session
-- [ ] **S6.3** Implement `GET /results/{session_id}` — renders `results.html` with scores from the latest attempt
-- [ ] **S6.4** Create `templates/results.html` — overall score prominently displayed, per-concept score list, "Practice Again" and "Evaluation Mode" buttons (evaluation button only active if ≥1 question was failed)
-- [ ] **S6.5** Create `templates/partials/score_bar.html` — horizontal bar showing concept name + % score, colour-coded (green ≥80%, yellow 50–79%, red <50%)
-- [ ] **S6.6** Update `failure_counts` in session: for each wrong answer, increment `failure_counts[question_id]` by 1
+- [x] **S6.1** Add `calculate_scores(attempt: dict, quiz: list) -> dict` to `quiz_engine.py` — returns `overall_score` (%) and `concept_scores` dict
+- [x] **S6.2** Call `calculate_scores()` when the last answer is submitted; store results in the attempt record and update `failure_counts` in the session
+- [x] **S6.3** Implement `GET /results/{session_id}` — renders `results.html` with scores from the latest attempt
+- [x] **S6.4** Create `templates/results.html` — overall score prominently displayed, per-concept score list, "Practice Again" and "Evaluation Mode" buttons (evaluation button only active if ≥1 question was failed)
+- [x] **S6.5** Create `templates/partials/score_bar.html` — horizontal bar showing concept name + % score, colour-coded (green ≥80%, yellow 50–79%, red <50%)
+- [x] **S6.6** Update `failure_counts` in session: for each wrong answer, increment `failure_counts[question_id]` by 1
 
 ### Testing
 
-- [ ] Unit: `calculate_scores()` returns 100% overall when all answers are correct
-- [ ] Unit: `calculate_scores()` returns 0% for a concept where all questions were wrong
-- [ ] Unit: `failure_counts` increments correctly across two consecutive attempts
-- [ ] Integration: GET `/results/{session_id}` after a completed attempt renders scores without error
-- [ ] Integration: `failure_counts` in session correctly reflects wrong answers after attempt is scored
+- [x] Unit: `calculate_scores()` returns 100% overall when all answers are correct
+- [x] Unit: `calculate_scores()` returns 0% for a concept where all questions were wrong
+- [x] Unit: `failure_counts` increments correctly across two consecutive attempts
+- [x] Integration: GET `/results/{session_id}` after a completed attempt renders scores without error
+- [x] Integration: `failure_counts` in session correctly reflects wrong answers after attempt is scored
 
 ### Demo
 
