@@ -150,3 +150,27 @@ def test_list_quizzes_reflects_completed_attempt():
     assert summary["latest_mode"] == "evaluation"
     assert summary["latest_score"] == 0.75
     assert summary["latest_in_progress"] is False
+
+
+def test_hash_content_is_deterministic_for_the_same_text():
+    assert db._hash_content("some source text") == db._hash_content("some source text")
+
+
+def test_hash_content_differs_for_different_text():
+    assert db._hash_content("some source text") != db._hash_content("other source text")
+
+
+def test_find_quiz_by_content_hash_returns_none_when_no_match():
+    db.create_quiz("some source text")
+
+    assert db.find_quiz_by_content_hash(db._hash_content("unrelated text")) is None
+
+
+def test_find_quiz_by_content_hash_returns_the_matching_row():
+    quiz = db.create_quiz("some source text")
+
+    found = db.find_quiz_by_content_hash(db._hash_content("some source text"))
+
+    assert found is not None
+    assert found["session_id"] == quiz["session_id"]
+    assert found["source_text"] == "some source text"
