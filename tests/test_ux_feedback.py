@@ -50,6 +50,18 @@ def test_index_page_submit_button_gets_disabled_on_submit(client):
     assert "upload-submit-button\").disabled = true" in resp.text
 
 
+def test_index_page_file_input_shows_selected_filename(client):
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert 'id="file-input"' in resp.text
+    assert 'id="file-drop-label"' in resp.text
+    assert 'id="file-upload-text"' in resp.text
+    assert 'getElementById("file-input")' in resp.text
+    assert "addEventListener(\"change\"" in resp.text
+    assert '"Selected: " + this.files[0].name' in resp.text
+
+
 # --- S3.2: generating-page copy names Claude and sets a time expectation ---
 
 
