@@ -159,3 +159,26 @@ def test_deleted_quiz_no_longer_appears_on_dashboard(client):
     resp = client.get("/dashboard")
 
     assert quiz["session_id"] not in resp.text
+
+
+def test_dashboard_card_has_generate_more_and_regenerate_links_when_quiz_exists(client):
+    quiz = db.create_quiz("some source text")
+    quiz["quiz"] = [{"id": "q1"}]
+    db.save_quiz(quiz)
+
+    resp = client.get("/dashboard")
+
+    assert f'href="/quiz/{quiz["session_id"]}/expand"' in resp.text
+    assert f'href="/quiz/{quiz["session_id"]}/regenerate"' in resp.text
+    assert "Generate more questions" in resp.text
+    assert "Regenerate quiz" in resp.text
+    assert "confirm(" in resp.text
+
+
+def test_dashboard_card_omits_generate_more_and_regenerate_when_quiz_not_ready(client):
+    db.create_quiz("some source text")  # no quiz generated yet
+
+    resp = client.get("/dashboard")
+
+    assert "/expand" not in resp.text
+    assert "/regenerate" not in resp.text
