@@ -15,7 +15,7 @@
 </div>
 
 <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
-  <form action="/ingest" method="post" enctype="multipart/form-data" class="space-y-6">
+  <form id="upload-form" action="/ingest" method="post" enctype="multipart/form-data" class="space-y-6">
 
     <!-- File upload -->
     <div>
@@ -46,11 +46,31 @@
         class="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"></textarea>
     </div>
 
-    <button type="submit"
-      class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors">
+    <button type="submit" id="upload-submit-button"
+      class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
       Generate Quiz
     </button>
 
+    <div id="upload-status" class="hidden items-center justify-center gap-2 text-sm text-gray-500">
+      <svg class="animate-spin h-4 w-4 text-indigo-600" viewBox="0 0 24 24" fill="none">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+      </svg>
+      <span>Uploading and processing your material…</span>
+    </div>
+
   </form>
 </div>
+
+<script>
+  document.getElementById("upload-form").addEventListener("submit", function () {
+    // Deliberately leaves the default form submission alone — the browser's
+    // native full-page navigation still happens on both success and error,
+    // this just shows feedback while that's in flight.
+    document.getElementById("upload-submit-button").disabled = true;
+    var status = document.getElementById("upload-status");
+    status.classList.remove("hidden");
+    status.classList.add("flex");
+  });
+</script>
 {% endblock %}

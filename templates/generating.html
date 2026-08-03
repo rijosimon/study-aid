@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Study Aid — Building your quiz{% endblock %}
+{% block title %}Study Aid — Talking to Claude{% endblock %}
 
 {% block content %}
 {% if truncated %}
@@ -17,6 +17,7 @@
     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
   </svg>
-  <p class="text-gray-500 text-lg">Building your quiz…</p>
+  <p class="text-gray-900 text-lg font-medium">Talking to Claude…</p>
+  <p class="text-gray-500 mt-2">Claude is reading through your material and writing quiz questions.<br>This usually takes 10–30 seconds.</p>
 </div>
 {% endblock %}

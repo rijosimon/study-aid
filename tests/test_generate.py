@@ -42,7 +42,7 @@ def test_generating_page_renders_and_polls_generate(client):
     resp = client.get(f"/generating/{session_id}")
 
     assert resp.status_code == 200
-    assert "Building your quiz" in resp.text
+    assert "Talking to Claude" in resp.text
     assert f"/generate/{session_id}" in resp.text
 
 
