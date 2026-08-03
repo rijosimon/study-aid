@@ -123,3 +123,39 @@ def test_nav_link_to_dashboard_present_on_landing_page(client):
 
     assert resp.status_code == 200
     assert 'href="/dashboard"' in resp.text
+
+
+def test_dashboard_card_has_delete_button(client):
+    quiz = db.create_quiz("some source text")
+
+    resp = client.get("/dashboard")
+
+    assert f'id="quiz-card-{quiz["session_id"]}"' in resp.text
+    assert f'hx-delete="/quiz/{quiz["session_id"]}"' in resp.text
+    assert f'hx-target="#quiz-card-{quiz["session_id"]}"' in resp.text
+    assert "hx-confirm=" in resp.text
+
+
+def test_delete_quiz_route_removes_quiz_and_returns_empty_body(client):
+    quiz = db.create_quiz("some source text")
+
+    resp = client.delete(f"/quiz/{quiz['session_id']}")
+
+    assert resp.status_code == 200
+    assert resp.text == ""
+    assert db.get_quiz(quiz["session_id"]) is None
+
+
+def test_delete_quiz_route_is_idempotent_for_unknown_id(client):
+    resp = client.delete("/quiz/does-not-exist")
+
+    assert resp.status_code == 200
+
+
+def test_deleted_quiz_no_longer_appears_on_dashboard(client):
+    quiz = db.create_quiz("some source text")
+
+    client.delete(f"/quiz/{quiz['session_id']}")
+    resp = client.get("/dashboard")
+
+    assert quiz["session_id"] not in resp.text

@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 
-from db import create_quiz, get_quiz, init_db, list_quizzes, save_quiz
+from db import create_quiz, delete_quiz, get_quiz, init_db, list_quizzes, save_quiz
 from parsers import ExtractionError, extract_docx, extract_pdf, extract_text
 from quiz_engine import (
     QuizGenerationError,
@@ -80,6 +80,12 @@ async def dashboard(request: Request):
         cards.append({**summary, "href": href, "status_label": status_label})
 
     return templates.TemplateResponse(request, "dashboard.html", {"quizzes": cards})
+
+
+@app.delete("/quiz/{session_id}")
+async def delete_quiz_route(session_id: str):
+    delete_quiz(session_id)
+    return Response(status_code=200)
 
 
 @app.get("/health")
