@@ -1,12 +1,10 @@
 """S8.6: integration tests for the Epic 8 hardening stories (S8.1-S8.4, S8.7)."""
 
-import os
-
 import pytest
 from fastapi.testclient import TestClient
 
+import db
 import main
-import session_store
 from main import app
 from quiz_engine import QuizGenerationError
 from tests.pdf_fixtures import build_image_only_pdf
@@ -14,9 +12,9 @@ from tests.pdf_fixtures import build_image_only_pdf
 
 @pytest.fixture(autouse=True)
 def clear_store():
-    session_store._store.clear()
+    db.reset_db()
     yield
-    session_store._store.clear()
+    db.reset_db()
 
 
 @pytest.fixture
@@ -24,7 +22,7 @@ def client():
     return TestClient(app, follow_redirects=False)
 
 
-# --- S8.1: expired/missing session -> redirect to / with flash message ---
+# --- S8.1: missing quiz -> redirect to / with flash message ---
 
 
 @pytest.mark.parametrize(
@@ -46,27 +44,27 @@ def test_missing_session_redirects_with_flash_message(client, method, path):
         resp = client.post(path, data=data)
 
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/?flash=session_expired"
+    assert resp.headers["location"] == "/?flash=quiz_not_found"
 
 
 def test_landing_page_shows_flash_message(client):
-    resp = client.get("/?flash=session_expired")
+    resp = client.get("/?flash=quiz_not_found")
 
     assert resp.status_code == 200
-    assert "Session expired. Please start over." in resp.text
+    assert "Quiz not found. Please start over." in resp.text
 
 
 def test_landing_page_shows_no_banner_without_flash_param(client):
     resp = client.get("/")
 
-    assert "Session expired" not in resp.text
+    assert "Quiz not found" not in resp.text
 
 
 def test_landing_page_ignores_unknown_flash_values(client):
     resp = client.get("/?flash=not-a-real-key")
 
     assert resp.status_code == 200
-    assert "Session expired" not in resp.text
+    assert "Quiz not found" not in resp.text
 
 
 # --- S8.2: image-only PDF (already covered in test_ingest.py; smoke-check here too) ---
@@ -85,9 +83,7 @@ def test_image_only_pdf_shows_expected_message(client):
 
 
 def test_generation_timeout_shows_retry_link_back_to_generating_page(client, monkeypatch):
-    session = session_store.create_session()
-    session["source_text"] = "some source text"
-    client.cookies.set("session_id", session["session_id"])
+    session = db.create_quiz("some source text")
 
     def _raise_timeout(text):
         raise TimeoutError("Request timed out")
@@ -101,9 +97,7 @@ def test_generation_timeout_shows_retry_link_back_to_generating_page(client, mon
 
 
 def test_malformed_quiz_response_shows_retry_link(client, monkeypatch):
-    session = session_store.create_session()
-    session["source_text"] = "some source text"
-    client.cookies.set("session_id", session["session_id"])
+    session = db.create_quiz("some source text")
 
     def _raise(text):
         raise QuizGenerationError("malformed JSON after retry")
@@ -125,7 +119,7 @@ def test_long_pasted_text_is_truncated_with_warning_banner(client):
     resp = client.post("/ingest", data={"text": long_text})
     session_id = resp.headers["location"].removeprefix("/generating/")
 
-    session = session_store.get_session(session_id)
+    session = db.get_quiz(session_id)
     assert len(session["source_text"]) == main.MAX_SOURCE_TEXT_CHARS
     assert session["truncated"] is True
 
@@ -139,7 +133,7 @@ def test_short_pasted_text_is_not_truncated(client):
     resp = client.post("/ingest", data={"text": text})
     session_id = resp.headers["location"].removeprefix("/generating/")
 
-    session = session_store.get_session(session_id)
+    session = db.get_quiz(session_id)
     assert session["truncated"] is False
 
     page = client.get(f"/generating/{session_id}")
@@ -151,7 +145,7 @@ def test_short_pasted_text_is_not_truncated(client):
 
 def test_debug_session_endpoint_disabled_by_default(client, monkeypatch):
     monkeypatch.delenv("DEBUG", raising=False)
-    session = session_store.create_session()
+    session = db.create_quiz("")
 
     resp = client.get(f"/debug/session/{session['session_id']}")
 
@@ -160,8 +154,7 @@ def test_debug_session_endpoint_disabled_by_default(client, monkeypatch):
 
 def test_debug_session_endpoint_returns_session_json_when_enabled(client, monkeypatch):
     monkeypatch.setenv("DEBUG", "true")
-    session = session_store.create_session()
-    session["source_text"] = "hello world"
+    session = db.create_quiz("hello world")
 
     resp = client.get(f"/debug/session/{session['session_id']}")
 
@@ -169,7 +162,7 @@ def test_debug_session_endpoint_returns_session_json_when_enabled(client, monkey
     body = resp.json()
     assert body["session_id"] == session["session_id"]
     assert body["source_text"] == "hello world"
-    assert "created_at" in body and "expires_at" in body
+    assert "created_at" in body
 
 
 def test_debug_session_endpoint_404s_for_unknown_session_even_when_enabled(client, monkeypatch):

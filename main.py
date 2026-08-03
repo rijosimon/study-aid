@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -13,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 
+from db import create_quiz, get_quiz, init_db, save_quiz
 from parsers import ExtractionError, extract_docx, extract_pdf, extract_text
 from quiz_engine import (
     QuizGenerationError,
@@ -23,30 +23,21 @@ from quiz_engine import (
     select_evaluation_questions,
     update_failure_counts,
 )
-from session_store import create_session, get_session, purge_expired_sessions, set_session_cookie
 
 load_dotenv()
 
 logger = logging.getLogger("study_aid")
 
-CLEANUP_INTERVAL_SECONDS = 15 * 60
+# In-progress generation lock, keyed by quiz id. Deliberately NOT persisted —
+# it's a per-process concurrency guard (see /generate), not durable quiz
+# state. If the server restarts mid-generation the attempt is simply retried.
+_generating: set[str] = set()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = asyncio.create_task(_cleanup_loop())
+    init_db()
     yield
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
-
-
-async def _cleanup_loop():
-    while True:
-        await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
-        purge_expired_sessions()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -56,12 +47,12 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 FLASH_MESSAGES = {
-    "session_expired": "Session expired. Please start over.",
+    "quiz_not_found": "Quiz not found. Please start over.",
 }
 
 
-def _session_expired_redirect() -> RedirectResponse:
-    return RedirectResponse(url="/?flash=session_expired", status_code=303)
+def _quiz_not_found_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/?flash=quiz_not_found", status_code=303)
 
 
 @app.get("/")
@@ -127,20 +118,16 @@ async def ingest(
     if truncated:
         source_text = source_text[:MAX_SOURCE_TEXT_CHARS]
 
-    session = create_session()
-    session["source_text"] = source_text
-    session["truncated"] = truncated
+    session = create_quiz(source_text, truncated)
 
-    response = RedirectResponse(url=f"/generating/{session['session_id']}", status_code=303)
-    set_session_cookie(response, session["session_id"])
-    return response
+    return RedirectResponse(url=f"/generating/{session['session_id']}", status_code=303)
 
 
 @app.get("/generating/{session_id}")
 async def generating(request: Request, session_id: str):
-    session = get_session(session_id)
+    session = get_quiz(session_id)
     if session is None:
-        return _session_expired_redirect()
+        return _quiz_not_found_redirect()
     if session.get("quiz"):
         return RedirectResponse(url=f"/quiz/{session_id}", status_code=303)
     return templates.TemplateResponse(
@@ -152,15 +139,15 @@ async def generating(request: Request, session_id: str):
 
 @app.post("/generate/{session_id}")
 async def generate(request: Request, session_id: str):
-    session = get_session(session_id)
+    session = get_quiz(session_id)
     if session is None:
-        return _session_expired_redirect()
+        return _quiz_not_found_redirect()
 
     if session.get("quiz"):
         return Response(headers={"HX-Redirect": f"/quiz/{session_id}"})
 
-    if session.get("_generating"):
-        # Another poll already kicked off generation for this session; the
+    if session_id in _generating:
+        # Another poll already kicked off generation for this quiz; the
         # Claude call runs off the event loop, so overlapping HTMX polls can
         # arrive before it finishes. Tell this one there's nothing to do yet
         # rather than starting a second (paid) generation call. HX-Reswap:
@@ -168,9 +155,10 @@ async def generate(request: Request, session_id: str):
         # (it would otherwise wipe out the polling element and stall it).
         return Response(status_code=202, headers={"HX-Reswap": "none"})
 
-    session["_generating"] = True
+    _generating.add(session_id)
     try:
         session["quiz"] = await run_in_threadpool(generate_quiz, session["source_text"])
+        save_quiz(session)
     except QuizGenerationError:
         logger.exception("Quiz generation failed for session %s", session_id)
         return templates.TemplateResponse(
@@ -192,7 +180,7 @@ async def generate(request: Request, session_id: str):
             },
         )
     finally:
-        session["_generating"] = False
+        _generating.discard(session_id)
 
     return Response(headers={"HX-Redirect": f"/quiz/{session_id}"})
 
@@ -229,9 +217,9 @@ def _active_questions(quiz_questions: list, attempt: dict) -> list:
 
 @app.get("/quiz/{session_id}")
 async def quiz(request: Request, session_id: str, mode: str = "practice"):
-    session = get_session(session_id)
+    session = get_quiz(session_id)
     if session is None:
-        return _session_expired_redirect()
+        return _quiz_not_found_redirect()
 
     quiz_questions = session.get("quiz")
     if not quiz_questions:
@@ -257,6 +245,7 @@ async def quiz(request: Request, session_id: str, mode: str = "practice"):
             "question_ids": [q["id"] for q in quiz_questions],
         }
         attempts.append(attempt)
+        save_quiz(session)
 
     active_questions = _active_questions(quiz_questions, attempt)
     context = _question_context(
@@ -267,9 +256,9 @@ async def quiz(request: Request, session_id: str, mode: str = "practice"):
 
 @app.post("/retry/{session_id}")
 async def retry(session_id: str, mode: str = "practice"):
-    session = get_session(session_id)
+    session = get_quiz(session_id)
     if session is None:
-        return _session_expired_redirect()
+        return _quiz_not_found_redirect()
 
     quiz_questions = session.get("quiz") or []
     if not quiz_questions:
@@ -291,6 +280,7 @@ async def retry(session_id: str, mode: str = "practice"):
         "question_ids": question_ids,
     }
     session.setdefault("attempts", []).append(attempt)
+    save_quiz(session)
 
     return RedirectResponse(url=f"/quiz/{session_id}?mode={mode}", status_code=303)
 
@@ -302,9 +292,9 @@ async def answer(
     question_id: str = Form(...),
     user_answer: str = Form(""),
 ):
-    session = get_session(session_id)
+    session = get_quiz(session_id)
     if session is None:
-        return _session_expired_redirect()
+        return _quiz_not_found_redirect()
 
     quiz_questions = session.get("quiz") or []
     attempts = session.get("attempts") or []
@@ -346,8 +336,10 @@ async def answer(
         attempt["overall_score"] = scores["overall_score"]
         attempt["concept_scores"] = scores["concept_scores"]
         update_failure_counts(session.setdefault("failure_counts", {}), attempt)
+        save_quiz(session)
         return Response(headers={"HX-Redirect": f"/results/{session_id}"})
 
+    save_quiz(session)
     next_question = next(q for q in active_questions if q["id"] not in attempt["answers"])
     feedback = {
         "correct": correct,
@@ -378,9 +370,9 @@ def _score_text_color(fraction: float) -> str:
 
 @app.get("/results/{session_id}")
 async def results(request: Request, session_id: str):
-    session = get_session(session_id)
+    session = get_quiz(session_id)
     if session is None:
-        return _session_expired_redirect()
+        return _quiz_not_found_redirect()
 
     attempts = session.get("attempts") or []
     if not attempts or attempts[-1].get("overall_score") is None:
@@ -418,7 +410,7 @@ async def debug_session(session_id: str):
     if os.environ.get("DEBUG", "").lower() != "true":
         raise HTTPException(status_code=404)
 
-    session = get_session(session_id)
+    session = get_quiz(session_id)
     if session is None:
         raise HTTPException(status_code=404)
 

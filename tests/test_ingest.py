@@ -1,16 +1,16 @@
 import pytest
 from fastapi.testclient import TestClient
 
-import session_store
+import db
 from main import app
 from tests.pdf_fixtures import build_image_only_pdf, build_pdf_with_text
 
 
 @pytest.fixture(autouse=True)
 def clear_store():
-    session_store._store.clear()
+    db.reset_db()
     yield
-    session_store._store.clear()
+    db.reset_db()
 
 
 @pytest.fixture
@@ -31,10 +31,7 @@ def test_ingest_pdf_creates_session_and_redirects_to_generating(client):
     assert location.startswith("/generating/")
     session_id = location.removeprefix("/generating/")
 
-    assert "session_id" in resp.cookies
-    assert resp.cookies["session_id"] == session_id
-
-    session = session_store.get_session(session_id)
+    session = db.get_quiz(session_id)
     assert session is not None
     assert "Photosynthesis" in session["source_text"]
 
@@ -46,7 +43,7 @@ def test_ingest_pasted_text_creates_session(client):
 
     assert resp.status_code == 303
     session_id = resp.headers["location"].removeprefix("/generating/")
-    session = session_store.get_session(session_id)
+    session = db.get_quiz(session_id)
     assert session is not None
     assert session["source_text"] == long_text.strip()
 
