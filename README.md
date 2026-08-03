@@ -72,3 +72,9 @@ study-aid/
 Every generated quiz is a row in a SQLite database (`db.py`), identified by an id that shows up in every URL (`/quiz/{id}`, `/results/{id}`, etc.) — the same id that used to be an expiring session cookie is now a permanent identifier for that quiz. A row holds the source text, the generated quiz questions, every attempt (practice or evaluation) with its answers and scores, and cumulative per-question failure counts, all as JSON columns. There's no per-user scoping yet — one running instance of the app is assumed to belong to one user; that's expected to change once login is added.
 
 Quiz generation and grading run in a thread pool (`fastapi.concurrency.run_in_threadpool`) rather than directly in the async route handlers, so a slow Claude call for one quiz doesn't block the whole server for everyone else. The same applies to the in-progress-generation lock (`main._generating`), which is a plain in-memory set, not persisted — if the server restarts mid-generation, the attempt is simply retried.
+
+## License
+
+study-aid is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE): free to use, modify, and share for any noncommercial purpose, but commercial use is not permitted. See the [LICENSE](LICENSE) file for the full terms.
+
+Contributions are welcome. By submitting a contribution, you agree it will be accepted and distributed under the same LICENSE terms as the rest of the project.
