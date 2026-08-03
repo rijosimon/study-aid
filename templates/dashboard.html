@@ -33,6 +33,17 @@
         <span class="shrink-0 text-sm font-medium text-indigo-600 whitespace-nowrap">{{ quiz.status_label }}</span>
       </div>
     </a>
+    {% if quiz.has_quiz %}
+    <a href="/quiz/{{ quiz.session_id }}/expand"
+      class="shrink-0 text-xs font-medium text-indigo-600 hover:text-indigo-800 whitespace-nowrap px-2">
+      Generate more questions
+    </a>
+    <a href="/quiz/{{ quiz.session_id }}/regenerate"
+      onclick="return confirm('Regenerate this quiz? This replaces all its questions and clears past attempts and scores — this can\'t be undone.');"
+      class="shrink-0 text-xs font-medium text-gray-500 hover:text-red-600 whitespace-nowrap px-2">
+      Regenerate quiz
+    </a>
+    {% endif %}
     <button type="button" aria-label="Delete quiz"
       hx-delete="/quiz/{{ quiz.session_id }}"
       hx-target="#quiz-card-{{ quiz.session_id }}"

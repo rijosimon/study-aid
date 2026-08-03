@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from quiz_engine import QuizGenerationError, generate_quiz
+from quiz_engine import QuizGenerationError, generate_quiz, renumber_questions
 from tests.fake_claude import FakeAnthropicClient
 
 VALID_QUIZ = json.dumps(
@@ -104,3 +104,48 @@ def test_generate_quiz_strips_markdown_code_fences():
     questions = generate_quiz("some source text", client=client)
 
     assert len(questions) == 3
+
+
+def test_generate_quiz_without_existing_questions_omits_avoid_instruction():
+    client = FakeAnthropicClient(responses=[VALID_QUIZ])
+
+    generate_quiz("some source text", client=client)
+
+    prompt = client.messages.last_kwargs["messages"][0]["content"]
+    assert "already has quiz questions" not in prompt
+
+
+def test_generate_quiz_with_existing_questions_includes_avoid_instruction():
+    client = FakeAnthropicClient(responses=[VALID_QUIZ])
+
+    generate_quiz(
+        "some source text",
+        client=client,
+        existing_questions=["What pigment absorbs light in photosynthesis?"],
+    )
+
+    prompt = client.messages.last_kwargs["messages"][0]["content"]
+    assert "already has quiz questions" in prompt
+    assert "What pigment absorbs light in photosynthesis?" in prompt
+
+
+def test_renumber_questions_reassigns_sequential_ids_from_start():
+    questions = [
+        {"id": "q1", "question": "A"},
+        {"id": "q1", "question": "B"},  # Claude restarts numbering each call
+    ]
+
+    renumbered = renumber_questions(questions, start=4)
+
+    assert [q["id"] for q in renumbered] == ["q4", "q5"]
+    # other fields preserved
+    assert [q["question"] for q in renumbered] == ["A", "B"]
+
+
+def test_renumber_questions_ids_dont_collide_with_existing_range():
+    existing_ids = {"q1", "q2", "q3"}
+    new_questions = [{"id": "q1", "question": "X"}, {"id": "q2", "question": "Y"}]
+
+    renumbered = renumber_questions(new_questions, start=len(existing_ids) + 1)
+
+    assert not existing_ids & {q["id"] for q in renumbered}

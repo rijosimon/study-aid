@@ -17,9 +17,11 @@ class FakeMessages:
     def __init__(self, responses: list[str]):
         self._responses = list(responses)
         self.calls = 0
+        self.last_kwargs: dict = {}
 
     def create(self, **kwargs):
         self.calls += 1
+        self.last_kwargs = kwargs
         text = self._responses[min(self.calls, len(self._responses)) - 1]
         return FakeMessage(text)
 

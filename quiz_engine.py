@@ -30,7 +30,16 @@ class QuizGenerationError(RuntimeError):
     """Raised when Claude fails to produce a usable quiz after a retry."""
 
 
-def _build_user_prompt(source_text: str) -> str:
+def _build_user_prompt(source_text: str, existing_questions: Optional[list[str]] = None) -> str:
+    avoid_block = ""
+    if existing_questions:
+        existing_list = "\n".join(f"- {q}" for q in existing_questions)
+        avoid_block = (
+            "This material already has quiz questions covering the "
+            "following — write questions that explore different angles or "
+            "details of the material instead of repeating or closely "
+            f"rephrasing any of them:\n{existing_list}\n\n"
+        )
     return (
         "Generate a quiz from the following study material. Return JSON matching "
         "this schema exactly:\n\n"
@@ -44,6 +53,7 @@ def _build_user_prompt(source_text: str) -> str:
         "- short_answer questions must omit the options field entirely\n"
         "- Cover all major concepts in the material thoroughly\n"
         "- Respond with JSON only, no other text\n\n"
+        f"{avoid_block}"
         f"Study material:\n{source_text}"
     )
 
@@ -84,9 +94,13 @@ def _parse_questions(raw_response: str) -> list[dict]:
     return questions
 
 
-def generate_quiz(source_text: str, client: Optional[anthropic.Anthropic] = None) -> list[dict]:
+def generate_quiz(
+    source_text: str,
+    client: Optional[anthropic.Anthropic] = None,
+    existing_questions: Optional[list[str]] = None,
+) -> list[dict]:
     client = client or anthropic.Anthropic()
-    user_prompt = _build_user_prompt(source_text)
+    user_prompt = _build_user_prompt(source_text, existing_questions)
 
     last_error: Optional[Exception] = None
     for attempt in range(2):
@@ -104,6 +118,14 @@ def generate_quiz(source_text: str, client: Optional[anthropic.Anthropic] = None
             logger.warning("Quiz generation attempt %d failed: %s", attempt + 1, exc)
 
     raise QuizGenerationError(f"Claude returned malformed quiz JSON after retry: {last_error}")
+
+
+def renumber_questions(questions: list[dict], start: int) -> list[dict]:
+    """Return a copy of `questions` with ids reassigned to q{start},
+    q{start+1}, ... in order. Used when merging newly generated questions
+    into an existing quiz — Claude's own ids (it always starts back at q1)
+    would otherwise collide with the existing set."""
+    return [{**q, "id": f"q{start + offset}"} for offset, q in enumerate(questions)]
 
 
 def grade_choice(question: dict, user_answer: str) -> bool:

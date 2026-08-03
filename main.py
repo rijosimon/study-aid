@@ -29,6 +29,7 @@ from quiz_engine import (
     generate_quiz,
     grade_choice,
     grade_short_answer,
+    renumber_questions,
     select_evaluation_questions,
     update_failure_counts,
 )
@@ -198,6 +199,22 @@ async def ingest(
     return RedirectResponse(url=f"/generating/{session['session_id']}", status_code=303)
 
 
+GENERATING_COPY = {
+    "initial": (
+        "Talking to Claude…",
+        "Claude is reading through your material and writing quiz questions.",
+    ),
+    "expand": (
+        "Generating more questions…",
+        "Claude is reading through your material again and writing new questions that don't repeat what's already there.",
+    ),
+    "regenerate": (
+        "Regenerating quiz…",
+        "Claude is starting over and writing a brand new set of questions for this material.",
+    ),
+}
+
+
 @app.get("/generating/{session_id}")
 async def generating(request: Request, session_id: str):
     session = get_quiz(session_id)
@@ -206,15 +223,61 @@ async def generating(request: Request, session_id: str):
     flash_param = request.query_params.get("flash", "")
     if session.get("quiz"):
         return _redirect(f"/quiz/{session_id}", flash=flash_param)
+    heading, subheading = GENERATING_COPY["initial"]
     return templates.TemplateResponse(
         request,
         "generating.html",
         {
             "session_id": session_id,
+            "generate_url": f"/generate/{session_id}",
+            "heading": heading,
+            "subheading": subheading,
             "truncated": session.get("truncated", False),
             "flash": FLASH_MESSAGES.get(flash_param),
         },
     )
+
+
+async def _run_locked_generation(request: Request, session_id: str, generate_fn, retry_url: str):
+    """Runs `generate_fn` (a zero-arg callable returning list[dict]) in a
+    threadpool under the `_generating` lock, keyed by session id. Shared by
+    the initial-generation route and the dashboard "generate more"/
+    "regenerate" actions so none of them can run an overlapping (paid)
+    Claude call for the same quiz. Returns (questions, None) on success, or
+    (None, response) if the lock was already held or generation failed —
+    the caller should return `response` immediately in that case."""
+    if session_id in _generating:
+        # Another poll already kicked off generation for this quiz. HX-Reswap:
+        # none stops htmx from swapping this empty body into the spinner
+        # (it would otherwise wipe out the polling element and stall it).
+        return None, Response(status_code=202, headers={"HX-Reswap": "none"})
+
+    _generating.add(session_id)
+    try:
+        questions = await run_in_threadpool(generate_fn)
+        return questions, None
+    except QuizGenerationError:
+        logger.exception("Quiz generation failed for session %s", session_id)
+        return None, templates.TemplateResponse(
+            request,
+            "partials/generation_error.html",
+            {
+                "message": "We couldn't generate your quiz. Please try again.",
+                "retry_url": retry_url,
+            },
+        )
+    except Exception:
+        logger.exception("Unexpected error while generating quiz for session %s", session_id)
+        return None, templates.TemplateResponse(
+            request,
+            "partials/generation_error.html",
+            {
+                "message": "Something went wrong while generating your quiz. Please try again.",
+                "retry_url": retry_url,
+            },
+        )
+    finally:
+        _generating.discard(session_id)
 
 
 @app.post("/generate/{session_id}")
@@ -226,42 +289,99 @@ async def generate(request: Request, session_id: str):
     if session.get("quiz"):
         return Response(headers={"HX-Redirect": f"/quiz/{session_id}"})
 
-    if session_id in _generating:
-        # Another poll already kicked off generation for this quiz; the
-        # Claude call runs off the event loop, so overlapping HTMX polls can
-        # arrive before it finishes. Tell this one there's nothing to do yet
-        # rather than starting a second (paid) generation call. HX-Reswap:
-        # none stops htmx from swapping this empty body into the spinner
-        # (it would otherwise wipe out the polling element and stall it).
-        return Response(status_code=202, headers={"HX-Reswap": "none"})
+    questions, early = await _run_locked_generation(
+        request,
+        session_id,
+        lambda: generate_quiz(session["source_text"]),
+        f"/generating/{session_id}",
+    )
+    if early is not None:
+        return early
 
-    _generating.add(session_id)
-    try:
-        session["quiz"] = await run_in_threadpool(generate_quiz, session["source_text"])
-        save_quiz(session)
-    except QuizGenerationError:
-        logger.exception("Quiz generation failed for session %s", session_id)
-        return templates.TemplateResponse(
-            request,
-            "partials/generation_error.html",
-            {
-                "message": "We couldn't generate your quiz. Please try again.",
-                "retry_url": f"/generating/{session_id}",
-            },
-        )
-    except Exception:
-        logger.exception("Unexpected error while generating quiz for session %s", session_id)
-        return templates.TemplateResponse(
-            request,
-            "partials/generation_error.html",
-            {
-                "message": "Something went wrong while generating your quiz. Please try again.",
-                "retry_url": f"/generating/{session_id}",
-            },
-        )
-    finally:
-        _generating.discard(session_id)
+    session["quiz"] = questions
+    save_quiz(session)
+    return Response(headers={"HX-Redirect": f"/quiz/{session_id}"})
 
+
+@app.get("/quiz/{session_id}/expand")
+async def quiz_expand(request: Request, session_id: str):
+    session = get_quiz(session_id)
+    if session is None:
+        return _quiz_not_found_redirect()
+    heading, subheading = GENERATING_COPY["expand"]
+    return templates.TemplateResponse(
+        request,
+        "generating.html",
+        {
+            "session_id": session_id,
+            "generate_url": f"/generate/{session_id}/expand",
+            "heading": heading,
+            "subheading": subheading,
+        },
+    )
+
+
+@app.post("/generate/{session_id}/expand")
+async def generate_expand(request: Request, session_id: str):
+    session = get_quiz(session_id)
+    if session is None:
+        return _quiz_not_found_redirect()
+
+    quiz_questions = session.get("quiz") or []
+    existing_texts = [q["question"] for q in quiz_questions]
+
+    questions, early = await _run_locked_generation(
+        request,
+        session_id,
+        lambda: generate_quiz(session["source_text"], existing_questions=existing_texts),
+        f"/quiz/{session_id}/expand",
+    )
+    if early is not None:
+        return early
+
+    new_questions = renumber_questions(questions, start=len(quiz_questions) + 1)
+    session["quiz"] = quiz_questions + new_questions
+    save_quiz(session)
+    return Response(headers={"HX-Redirect": f"/quiz/{session_id}"})
+
+
+@app.get("/quiz/{session_id}/regenerate")
+async def quiz_regenerate(request: Request, session_id: str):
+    session = get_quiz(session_id)
+    if session is None:
+        return _quiz_not_found_redirect()
+    heading, subheading = GENERATING_COPY["regenerate"]
+    return templates.TemplateResponse(
+        request,
+        "generating.html",
+        {
+            "session_id": session_id,
+            "generate_url": f"/generate/{session_id}/regenerate",
+            "heading": heading,
+            "subheading": subheading,
+        },
+    )
+
+
+@app.post("/generate/{session_id}/regenerate")
+async def generate_regenerate(request: Request, session_id: str):
+    session = get_quiz(session_id)
+    if session is None:
+        return _quiz_not_found_redirect()
+
+    questions, early = await _run_locked_generation(
+        request,
+        session_id,
+        lambda: generate_quiz(session["source_text"]),
+        f"/quiz/{session_id}/regenerate",
+    )
+    if early is not None:
+        return early
+
+    session["quiz"] = questions
+    session["attempts"] = []
+    session["failure_counts"] = {}
+    save_quiz(session)
     return Response(headers={"HX-Redirect": f"/quiz/{session_id}"})
 
 
