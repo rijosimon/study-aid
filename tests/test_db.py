@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 import db
@@ -64,3 +66,73 @@ def test_reset_db_clears_all_rows():
     db.reset_db()
 
     assert db.get_quiz(quiz["session_id"]) is None
+
+
+def test_list_quizzes_orders_most_recent_first():
+    first = db.create_quiz("first")
+    time.sleep(0.01)
+    second = db.create_quiz("second")
+    time.sleep(0.01)
+    third = db.create_quiz("third")
+
+    ids = [s["session_id"] for s in db.list_quizzes()]
+
+    assert ids == [third["session_id"], second["session_id"], first["session_id"]]
+
+
+def test_list_quizzes_empty_when_no_quizzes():
+    assert db.list_quizzes() == []
+
+
+def test_list_quizzes_truncates_long_preview():
+    long_text = "word " * 100
+    db.create_quiz(long_text)
+
+    summary = db.list_quizzes()[0]
+
+    assert len(summary["preview"]) == db.PREVIEW_LENGTH + 1  # + the ellipsis char
+    assert summary["preview"].endswith("…")
+
+
+def test_list_quizzes_reflects_generation_state():
+    quiz = db.create_quiz("some text")
+
+    summary = db.list_quizzes()[0]
+    assert summary["has_quiz"] is False
+    assert summary["question_count"] == 0
+    assert summary["latest_mode"] is None
+    assert summary["latest_score"] is None
+    assert summary["latest_in_progress"] is False
+
+    quiz["quiz"] = [{"id": "q1"}, {"id": "q2"}]
+    db.save_quiz(quiz)
+
+    summary = db.list_quizzes()[0]
+    assert summary["has_quiz"] is True
+    assert summary["question_count"] == 2
+
+
+def test_list_quizzes_reflects_in_progress_attempt():
+    quiz = db.create_quiz("some text")
+    quiz["quiz"] = [{"id": "q1"}]
+    quiz["attempts"] = [{"mode": "practice", "answers": {}, "overall_score": None}]
+    db.save_quiz(quiz)
+
+    summary = db.list_quizzes()[0]
+
+    assert summary["latest_mode"] == "practice"
+    assert summary["latest_score"] is None
+    assert summary["latest_in_progress"] is True
+
+
+def test_list_quizzes_reflects_completed_attempt():
+    quiz = db.create_quiz("some text")
+    quiz["quiz"] = [{"id": "q1"}]
+    quiz["attempts"] = [{"mode": "evaluation", "answers": {"q1": {}}, "overall_score": 0.75}]
+    db.save_quiz(quiz)
+
+    summary = db.list_quizzes()[0]
+
+    assert summary["latest_mode"] == "evaluation"
+    assert summary["latest_score"] == 0.75
+    assert summary["latest_in_progress"] is False
