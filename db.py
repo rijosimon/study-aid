@@ -34,7 +34,8 @@ def init_db(path: Optional[str] = None) -> None:
             attempts TEXT NOT NULL,
             failure_counts TEXT NOT NULL,
             created_at TEXT NOT NULL,
-            content_hash TEXT
+            content_hash TEXT,
+            name TEXT
         )
         """
     )
@@ -55,6 +56,13 @@ def init_db(path: Optional[str] = None) -> None:
             )
         _connection.commit()
 
+    # Likewise for `name` — no backfill needed, NULL is exactly the correct
+    # starting state (nobody has renamed anything yet).
+    columns = {row["name"] for row in _connection.execute("PRAGMA table_info(quizzes)")}
+    if "name" not in columns:
+        _connection.execute("ALTER TABLE quizzes ADD COLUMN name TEXT")
+        _connection.commit()
+
 
 def _conn() -> sqlite3.Connection:
     if _connection is None:
@@ -71,6 +79,7 @@ def _row_to_quiz(row: sqlite3.Row) -> dict:
         "attempts": json.loads(row["attempts"]),
         "failure_counts": json.loads(row["failure_counts"]),
         "created_at": row["created_at"],
+        "name": row["name"],
     }
 
 
@@ -135,6 +144,16 @@ def delete_quiz(quiz_id: str) -> None:
     conn.commit()
 
 
+def rename_quiz(quiz_id: str, name: str) -> None:
+    """Set a custom display name for a quiz, shown on the dashboard instead
+    of the auto-truncated source-text preview. An empty/whitespace name
+    clears it back to NULL, reverting to the preview."""
+    conn = _conn()
+    clean_name = (name or "").strip()
+    conn.execute("UPDATE quizzes SET name = ? WHERE id = ?", (clean_name or None, quiz_id))
+    conn.commit()
+
+
 def reset_db() -> None:
     """Test helper: wipe all rows without dropping the table."""
     conn = _conn()
@@ -145,34 +164,43 @@ def reset_db() -> None:
 PREVIEW_LENGTH = 120
 
 
+def _summarize_quiz(quiz: dict) -> dict:
+    """Lightweight summary shape for the dashboard — deliberately doesn't
+    include full question/attempt payloads, just enough to render a card
+    and link into the quiz."""
+    attempts = quiz["attempts"]
+    latest = attempts[-1] if attempts else None
+
+    source_text = (quiz["source_text"] or "").strip()
+    preview = source_text[:PREVIEW_LENGTH]
+    if len(source_text) > PREVIEW_LENGTH:
+        preview += "…"
+
+    return {
+        "session_id": quiz["session_id"],
+        "name": quiz["name"],
+        "preview": preview or "(no preview available)",
+        "created_at": quiz["created_at"],
+        "has_quiz": quiz["quiz"] is not None,
+        "question_count": len(quiz["quiz"]) if quiz["quiz"] else 0,
+        "latest_mode": latest["mode"] if latest else None,
+        "latest_score": latest.get("overall_score") if latest else None,
+        "latest_in_progress": bool(latest and latest.get("overall_score") is None),
+    }
+
+
 def list_quizzes() -> list:
-    """Lightweight summaries for the dashboard, most-recent-first. Deliberately
-    doesn't return full question/attempt payloads — just enough to render a
-    card and link into the quiz."""
+    """Summaries for every quiz, most-recent-first."""
     conn = _conn()
     rows = conn.execute("SELECT * FROM quizzes ORDER BY created_at DESC").fetchall()
+    return [_summarize_quiz(_row_to_quiz(row)) for row in rows]
 
-    summaries = []
-    for row in rows:
-        quiz = _row_to_quiz(row)
-        attempts = quiz["attempts"]
-        latest = attempts[-1] if attempts else None
 
-        source_text = (quiz["source_text"] or "").strip()
-        preview = source_text[:PREVIEW_LENGTH]
-        if len(source_text) > PREVIEW_LENGTH:
-            preview += "…"
-
-        summaries.append(
-            {
-                "session_id": quiz["session_id"],
-                "preview": preview or "(no preview available)",
-                "created_at": quiz["created_at"],
-                "has_quiz": quiz["quiz"] is not None,
-                "question_count": len(quiz["quiz"]) if quiz["quiz"] else 0,
-                "latest_mode": latest["mode"] if latest else None,
-                "latest_score": latest.get("overall_score") if latest else None,
-                "latest_in_progress": bool(latest and latest.get("overall_score") is None),
-            }
-        )
-    return summaries
+def get_quiz_summary(quiz_id: str) -> Optional[dict]:
+    """Single-quiz version of list_quizzes()'s summary shape — used when
+    only one dashboard card needs to be re-rendered (e.g. after a rename),
+    rather than the full list."""
+    quiz = get_quiz(quiz_id)
+    if quiz is None:
+        return None
+    return _summarize_quiz(quiz)
