@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import sqlite3
@@ -6,6 +7,12 @@ from datetime import datetime, timezone
 from typing import Optional
 
 _connection: Optional[sqlite3.Connection] = None
+
+
+def _hash_content(text: str) -> str:
+    """SHA-256 hex digest of the (post-truncation) source text, used to
+    detect duplicate uploads."""
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 
 
 def init_db(path: Optional[str] = None) -> None:
@@ -26,11 +33,27 @@ def init_db(path: Optional[str] = None) -> None:
             quiz TEXT,
             attempts TEXT NOT NULL,
             failure_counts TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            content_hash TEXT
         )
         """
     )
     _connection.commit()
+
+    # CREATE TABLE IF NOT EXISTS won't add columns to a database file that
+    # already existed before content_hash was introduced — migrate it in
+    # place and backfill hashes for any pre-existing rows.
+    columns = {row["name"] for row in _connection.execute("PRAGMA table_info(quizzes)")}
+    if "content_hash" not in columns:
+        _connection.execute("ALTER TABLE quizzes ADD COLUMN content_hash TEXT")
+        _connection.commit()
+        rows = _connection.execute("SELECT id, source_text FROM quizzes").fetchall()
+        for row in rows:
+            _connection.execute(
+                "UPDATE quizzes SET content_hash = ? WHERE id = ?",
+                (_hash_content(row["source_text"] or ""), row["id"]),
+            )
+        _connection.commit()
 
 
 def _conn() -> sqlite3.Connection:
@@ -55,10 +78,11 @@ def create_quiz(source_text: str, truncated: bool = False) -> dict:
     conn = _conn()
     quiz_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc).isoformat()
+    content_hash = _hash_content(source_text)
     conn.execute(
-        "INSERT INTO quizzes (id, source_text, truncated, quiz, attempts, failure_counts, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (quiz_id, source_text, int(truncated), None, "[]", "{}", created_at),
+        "INSERT INTO quizzes (id, source_text, truncated, quiz, attempts, failure_counts, created_at, content_hash) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (quiz_id, source_text, int(truncated), None, "[]", "{}", created_at, content_hash),
     )
     conn.commit()
     return get_quiz(quiz_id)
@@ -67,6 +91,20 @@ def create_quiz(source_text: str, truncated: bool = False) -> dict:
 def get_quiz(quiz_id: str) -> Optional[dict]:
     conn = _conn()
     row = conn.execute("SELECT * FROM quizzes WHERE id = ?", (quiz_id,)).fetchone()
+    if row is None:
+        return None
+    return _row_to_quiz(row)
+
+
+def find_quiz_by_content_hash(content_hash: str) -> Optional[dict]:
+    """Look up an existing quiz by the hash of its source text, used at
+    ingest time to detect duplicate uploads. Returns None if no quiz has
+    that content hash."""
+    conn = _conn()
+    row = conn.execute(
+        "SELECT * FROM quizzes WHERE content_hash = ? ORDER BY created_at DESC LIMIT 1",
+        (content_hash,),
+    ).fetchone()
     if row is None:
         return None
     return _row_to_quiz(row)

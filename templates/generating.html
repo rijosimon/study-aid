@@ -3,6 +3,11 @@
 {% block title %}Study Aid — Talking to Claude{% endblock %}
 
 {% block content %}
+{% if flash %}
+<div class="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+  {{ flash }}
+</div>
+{% endif %}
 {% if truncated %}
 <div class="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
   Document was truncated to fit AI limits.

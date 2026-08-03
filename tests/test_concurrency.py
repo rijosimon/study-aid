@@ -50,9 +50,12 @@ def test_ten_concurrent_sessions_generate_quizzes_simultaneously(monkeypatch):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             session_ids = []
-            for _ in range(10):
+            for i in range(10):
+                # Distinct text per session — identical content is now
+                # deduplicated at ingest time (see Epic 5), which would
+                # collapse these into a single session instead of 10.
                 resp = await client.post(
-                    "/ingest", data={"text": "Some study material. " * 10}
+                    "/ingest", data={"text": f"Some study material, session {i}. " * 10}
                 )
                 session_ids.append(resp.headers["location"].removeprefix("/generating/"))
 

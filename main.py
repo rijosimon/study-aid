@@ -12,7 +12,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 
-from db import create_quiz, delete_quiz, get_quiz, init_db, list_quizzes, save_quiz
+from db import (
+    _hash_content,
+    create_quiz,
+    delete_quiz,
+    find_quiz_by_content_hash,
+    get_quiz,
+    init_db,
+    list_quizzes,
+    save_quiz,
+)
 from parsers import ExtractionError, extract_docx, extract_pdf, extract_text
 from quiz_engine import (
     QuizGenerationError,
@@ -48,11 +57,35 @@ templates = Jinja2Templates(directory="templates")
 
 FLASH_MESSAGES = {
     "quiz_not_found": "Quiz not found. Please start over.",
+    "duplicate_content": "You've already created a quiz from this material.",
 }
 
 
 def _quiz_not_found_redirect() -> RedirectResponse:
     return RedirectResponse(url="/?flash=quiz_not_found", status_code=303)
+
+
+def _redirect(url: str, flash: str = "", status_code: int = 303) -> RedirectResponse:
+    """RedirectResponse to `url`, optionally tacking on a `flash` query param
+    (appended with `&` if `url` already has a query string)."""
+    if flash:
+        separator = "&" if "?" in url else "?"
+        url = f"{url}{separator}flash={flash}"
+    return RedirectResponse(url=url, status_code=status_code)
+
+
+def _quiz_destination(summary: dict) -> str:
+    """Where a user should land for a given quiz, based on its generation
+    and attempt state. Shared by /dashboard (existing quizzes) and /ingest
+    (duplicate-content redirects)."""
+    session_id = summary["session_id"]
+    if not summary["has_quiz"]:
+        return f"/generating/{session_id}"
+    if summary["latest_mode"] is None:
+        return f"/quiz/{session_id}"
+    if summary["latest_in_progress"]:
+        return f"/quiz/{session_id}?mode={summary['latest_mode']}"
+    return f"/results/{session_id}"
 
 
 @app.get("/")
@@ -61,23 +94,22 @@ async def index(request: Request):
     return templates.TemplateResponse(request, "index.html", {"flash": flash})
 
 
+def _quiz_status_label(summary: dict) -> str:
+    if not summary["has_quiz"]:
+        return "Generating…"
+    if summary["latest_mode"] is None:
+        return "Not yet attempted"
+    if summary["latest_in_progress"]:
+        return f"{summary['latest_mode'].capitalize()} in progress"
+    return f"{round(summary['latest_score'] * 100)}% ({summary['latest_mode'].capitalize()})"
+
+
 @app.get("/dashboard")
 async def dashboard(request: Request):
-    cards = []
-    for summary in list_quizzes():
-        if not summary["has_quiz"]:
-            href = f"/generating/{summary['session_id']}"
-            status_label = "Generating…"
-        elif summary["latest_mode"] is None:
-            href = f"/quiz/{summary['session_id']}"
-            status_label = "Not yet attempted"
-        elif summary["latest_in_progress"]:
-            href = f"/quiz/{summary['session_id']}?mode={summary['latest_mode']}"
-            status_label = f"{summary['latest_mode'].capitalize()} in progress"
-        else:
-            href = f"/results/{summary['session_id']}"
-            status_label = f"{round(summary['latest_score'] * 100)}% ({summary['latest_mode'].capitalize()})"
-        cards.append({**summary, "href": href, "status_label": status_label})
+    cards = [
+        {**summary, "href": _quiz_destination(summary), "status_label": _quiz_status_label(summary)}
+        for summary in list_quizzes()
+    ]
 
     return templates.TemplateResponse(request, "dashboard.html", {"quizzes": cards})
 
@@ -145,6 +177,22 @@ async def ingest(
     if truncated:
         source_text = source_text[:MAX_SOURCE_TEXT_CHARS]
 
+    content_hash = _hash_content(source_text)
+    existing = find_quiz_by_content_hash(content_hash)
+    if existing is not None:
+        # Same content was already ingested — send the user straight to
+        # wherever they left off instead of creating a duplicate row and
+        # triggering another (billed) Claude generation call.
+        attempts = existing["attempts"]
+        latest = attempts[-1] if attempts else None
+        summary = {
+            "session_id": existing["session_id"],
+            "has_quiz": existing["quiz"] is not None,
+            "latest_mode": latest["mode"] if latest else None,
+            "latest_in_progress": bool(latest and latest.get("overall_score") is None),
+        }
+        return _redirect(_quiz_destination(summary), flash="duplicate_content")
+
     session = create_quiz(source_text, truncated)
 
     return RedirectResponse(url=f"/generating/{session['session_id']}", status_code=303)
@@ -155,12 +203,17 @@ async def generating(request: Request, session_id: str):
     session = get_quiz(session_id)
     if session is None:
         return _quiz_not_found_redirect()
+    flash_param = request.query_params.get("flash", "")
     if session.get("quiz"):
-        return RedirectResponse(url=f"/quiz/{session_id}", status_code=303)
+        return _redirect(f"/quiz/{session_id}", flash=flash_param)
     return templates.TemplateResponse(
         request,
         "generating.html",
-        {"session_id": session_id, "truncated": session.get("truncated", False)},
+        {
+            "session_id": session_id,
+            "truncated": session.get("truncated", False),
+            "flash": FLASH_MESSAGES.get(flash_param),
+        },
     )
 
 
@@ -248,9 +301,11 @@ async def quiz(request: Request, session_id: str, mode: str = "practice"):
     if session is None:
         return _quiz_not_found_redirect()
 
+    flash_param = request.query_params.get("flash", "")
+
     quiz_questions = session.get("quiz")
     if not quiz_questions:
-        return RedirectResponse(url=f"/generating/{session_id}", status_code=303)
+        return _redirect(f"/generating/{session_id}", flash=flash_param)
 
     attempts = session.setdefault("attempts", [])
     latest = attempts[-1] if attempts else None
@@ -262,7 +317,7 @@ async def quiz(request: Request, session_id: str, mode: str = "practice"):
     elif mode == "evaluation":
         # Evaluation attempts must be set up via POST /retry, which knows the
         # failure_counts needed to select questions.
-        return RedirectResponse(url=f"/results/{session_id}", status_code=303)
+        return _redirect(f"/results/{session_id}", flash=flash_param)
     else:
         attempt = {
             "mode": "practice",
@@ -278,6 +333,7 @@ async def quiz(request: Request, session_id: str, mode: str = "practice"):
     context = _question_context(
         session_id, active_questions, active_questions[0], attempt["mode"], len(attempts)
     )
+    context["flash"] = FLASH_MESSAGES.get(flash_param)
     return templates.TemplateResponse(request, "quiz.html", context)
 
 
@@ -402,9 +458,10 @@ async def results(request: Request, session_id: str):
         return _quiz_not_found_redirect()
 
     attempts = session.get("attempts") or []
+    flash_param = request.query_params.get("flash", "")
     if not attempts or attempts[-1].get("overall_score") is None:
         mode = attempts[-1].get("mode", "practice") if attempts else "practice"
-        return RedirectResponse(url=f"/quiz/{session_id}?mode={mode}", status_code=303)
+        return _redirect(f"/quiz/{session_id}?mode={mode}", flash=flash_param)
 
     attempt = attempts[-1]
     overall_score = attempt["overall_score"]
@@ -428,6 +485,7 @@ async def results(request: Request, session_id: str):
         "overall_color_class": _score_text_color(overall_score),
         "concept_bars": concept_bars,
         "can_evaluate": can_evaluate,
+        "flash": FLASH_MESSAGES.get(flash_param),
     }
     return templates.TemplateResponse(request, "results.html", context)
 
