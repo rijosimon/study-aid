@@ -96,3 +96,39 @@ def reset_db() -> None:
     conn = _conn()
     conn.execute("DELETE FROM quizzes")
     conn.commit()
+
+
+PREVIEW_LENGTH = 120
+
+
+def list_quizzes() -> list:
+    """Lightweight summaries for the dashboard, most-recent-first. Deliberately
+    doesn't return full question/attempt payloads — just enough to render a
+    card and link into the quiz."""
+    conn = _conn()
+    rows = conn.execute("SELECT * FROM quizzes ORDER BY created_at DESC").fetchall()
+
+    summaries = []
+    for row in rows:
+        quiz = _row_to_quiz(row)
+        attempts = quiz["attempts"]
+        latest = attempts[-1] if attempts else None
+
+        source_text = (quiz["source_text"] or "").strip()
+        preview = source_text[:PREVIEW_LENGTH]
+        if len(source_text) > PREVIEW_LENGTH:
+            preview += "…"
+
+        summaries.append(
+            {
+                "session_id": quiz["session_id"],
+                "preview": preview or "(no preview available)",
+                "created_at": quiz["created_at"],
+                "has_quiz": quiz["quiz"] is not None,
+                "question_count": len(quiz["quiz"]) if quiz["quiz"] else 0,
+                "latest_mode": latest["mode"] if latest else None,
+                "latest_score": latest.get("overall_score") if latest else None,
+                "latest_in_progress": bool(latest and latest.get("overall_score") is None),
+            }
+        )
+    return summaries

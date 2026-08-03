@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 
-from db import create_quiz, get_quiz, init_db, save_quiz
+from db import create_quiz, get_quiz, init_db, list_quizzes, save_quiz
 from parsers import ExtractionError, extract_docx, extract_pdf, extract_text
 from quiz_engine import (
     QuizGenerationError,
@@ -59,6 +59,27 @@ def _quiz_not_found_redirect() -> RedirectResponse:
 async def index(request: Request):
     flash = FLASH_MESSAGES.get(request.query_params.get("flash", ""))
     return templates.TemplateResponse(request, "index.html", {"flash": flash})
+
+
+@app.get("/dashboard")
+async def dashboard(request: Request):
+    cards = []
+    for summary in list_quizzes():
+        if not summary["has_quiz"]:
+            href = f"/generating/{summary['session_id']}"
+            status_label = "Generating…"
+        elif summary["latest_mode"] is None:
+            href = f"/quiz/{summary['session_id']}"
+            status_label = "Not yet attempted"
+        elif summary["latest_in_progress"]:
+            href = f"/quiz/{summary['session_id']}?mode={summary['latest_mode']}"
+            status_label = f"{summary['latest_mode'].capitalize()} in progress"
+        else:
+            href = f"/results/{summary['session_id']}"
+            status_label = f"{round(summary['latest_score'] * 100)}% ({summary['latest_mode'].capitalize()})"
+        cards.append({**summary, "href": href, "status_label": status_label})
+
+    return templates.TemplateResponse(request, "dashboard.html", {"quizzes": cards})
 
 
 @app.get("/health")
