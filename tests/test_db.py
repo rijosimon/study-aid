@@ -68,6 +68,20 @@ def test_reset_db_clears_all_rows():
     assert db.get_quiz(quiz["session_id"]) is None
 
 
+def test_delete_quiz_removes_only_the_targeted_quiz():
+    keep = db.create_quiz("keep me")
+    remove = db.create_quiz("remove me")
+
+    db.delete_quiz(remove["session_id"])
+
+    assert db.get_quiz(remove["session_id"]) is None
+    assert db.get_quiz(keep["session_id"]) is not None
+
+
+def test_delete_quiz_is_a_no_op_for_unknown_id():
+    db.delete_quiz("does-not-exist")  # should not raise
+
+
 def test_list_quizzes_orders_most_recent_first():
     first = db.create_quiz("first")
     time.sleep(0.01)

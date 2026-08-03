@@ -91,6 +91,12 @@ def save_quiz(quiz: dict) -> None:
     conn.commit()
 
 
+def delete_quiz(quiz_id: str) -> None:
+    conn = _conn()
+    conn.execute("DELETE FROM quizzes WHERE id = ?", (quiz_id,))
+    conn.commit()
+
+
 def reset_db() -> None:
     """Test helper: wipe all rows without dropping the table."""
     conn = _conn()
