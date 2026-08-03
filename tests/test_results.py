@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-import session_store
+import db
 from main import app
 
 SAMPLE_QUIZ = [
@@ -37,9 +37,9 @@ SAMPLE_QUIZ = [
 
 @pytest.fixture(autouse=True)
 def clear_store():
-    session_store._store.clear()
+    db.reset_db()
     yield
-    session_store._store.clear()
+    db.reset_db()
 
 
 @pytest.fixture
@@ -48,10 +48,9 @@ def client():
 
 
 def _session_with_quiz(client) -> str:
-    session = session_store.create_session()
-    session["source_text"] = "some source text"
+    session = db.create_quiz("some source text")
     session["quiz"] = [dict(q) for q in SAMPLE_QUIZ]
-    client.cookies.set("session_id", session["session_id"])
+    db.save_quiz(session)
     return session["session_id"]
 
 
@@ -90,7 +89,7 @@ def test_results_redirects_to_landing_for_unknown_session(client):
     resp = client.get("/results/does-not-exist")
 
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/?flash=session_expired"
+    assert resp.headers["location"] == "/?flash=quiz_not_found"
 
 
 def test_results_evaluation_mode_enabled_when_a_question_was_missed(client):
@@ -116,7 +115,7 @@ def test_failure_counts_updated_in_session_after_completed_attempt(client):
     session_id = _session_with_quiz(client)
     _complete_quiz(client, session_id, {"q1": "Chlorophyll", "q2": "False", "q3": "False"})
 
-    session = session_store.get_session(session_id)
+    session = db.get_quiz(session_id)
     assert session["failure_counts"] == {"q3": 1}
 
 
@@ -127,5 +126,5 @@ def test_failure_counts_accumulate_across_two_attempts(client):
     # Second attempt: q1 now correct, q3 wrong again
     _complete_quiz(client, session_id, {"q1": "Chlorophyll", "q2": "False", "q3": "False"})
 
-    session = session_store.get_session(session_id)
+    session = db.get_quiz(session_id)
     assert session["failure_counts"] == {"q1": 1, "q3": 2}

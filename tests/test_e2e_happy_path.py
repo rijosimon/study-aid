@@ -5,8 +5,8 @@ through the real HTTP routes with Claude calls mocked out."""
 import pytest
 from fastapi.testclient import TestClient
 
+import db
 import main
-import session_store
 from main import app
 from tests.pdf_fixtures import build_pdf_with_text
 
@@ -35,9 +35,9 @@ FAKE_QUIZ = [
 
 @pytest.fixture(autouse=True)
 def clear_store():
-    session_store._store.clear()
+    db.reset_db()
     yield
-    session_store._store.clear()
+    db.reset_db()
 
 
 @pytest.fixture
@@ -69,7 +69,7 @@ def test_full_happy_path_pdf_to_evaluation_results(client, monkeypatch):
     assert resp.status_code == 200
     assert resp.headers["hx-redirect"] == f"/quiz/{session_id}"
 
-    session = session_store.get_session(session_id)
+    session = db.get_quiz(session_id)
     assert session["quiz"] == FAKE_QUIZ
 
     # 3. Practice mode: answer every question, one wrong on purpose (q2)
@@ -87,7 +87,7 @@ def test_full_happy_path_pdf_to_evaluation_results(client, monkeypatch):
     resp = client.get(f"/results/{session_id}")
     assert resp.status_code == 200
     assert "90%" in resp.text  # 9/10 correct
-    session = session_store.get_session(session_id)
+    session = db.get_quiz(session_id)
     assert session["failure_counts"] == {"q2": 1}
 
     # 5. Switch to evaluation mode
@@ -114,6 +114,6 @@ def test_full_happy_path_pdf_to_evaluation_results(client, monkeypatch):
     resp = client.get(f"/results/{session_id}")
     assert resp.status_code == 200
     assert "100%" in resp.text
-    session = session_store.get_session(session_id)
+    session = db.get_quiz(session_id)
     assert session["failure_counts"] == {"q2": 1}
     assert len(session["attempts"]) == 2

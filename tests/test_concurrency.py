@@ -13,8 +13,8 @@ import time
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+import db
 import main
-import session_store
 from main import app
 
 FAKE_QUIZ = [
@@ -34,9 +34,9 @@ GENERATION_DELAY = 0.2
 
 @pytest.fixture(autouse=True)
 def clear_store():
-    session_store._store.clear()
+    db.reset_db()
     yield
-    session_store._store.clear()
+    db.reset_db()
 
 
 def test_ten_concurrent_sessions_generate_quizzes_simultaneously(monkeypatch):
@@ -68,7 +68,7 @@ def test_ten_concurrent_sessions_generate_quizzes_simultaneously(monkeypatch):
     assert all(r.status_code == 200 for r in results)
     assert all(r.headers.get("hx-redirect", "").startswith("/quiz/") for r in results)
     for sid in [r.headers["hx-redirect"].removeprefix("/quiz/") for r in results]:
-        assert session_store.get_session(sid)["quiz"] == FAKE_QUIZ
+        assert db.get_quiz(sid)["quiz"] == FAKE_QUIZ
 
     # If generation were serialized (blocking the event loop), 10 sessions at
     # GENERATION_DELAY each would take >= 10 * GENERATION_DELAY = 2s. Running

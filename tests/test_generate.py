@@ -1,8 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
+import db
 import main
-import session_store
 from main import app
 from quiz_engine import QuizGenerationError
 
@@ -20,9 +20,9 @@ SAMPLE_QUIZ = [
 
 @pytest.fixture(autouse=True)
 def clear_store():
-    session_store._store.clear()
+    db.reset_db()
     yield
-    session_store._store.clear()
+    db.reset_db()
 
 
 @pytest.fixture
@@ -50,7 +50,7 @@ def test_generating_page_redirects_to_landing_for_unknown_session(client):
     resp = client.get("/generating/does-not-exist")
 
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/?flash=session_expired"
+    assert resp.headers["location"] == "/?flash=quiz_not_found"
 
 
 def test_generate_populates_quiz_and_returns_hx_redirect(client, monkeypatch):
@@ -62,7 +62,7 @@ def test_generate_populates_quiz_and_returns_hx_redirect(client, monkeypatch):
 
     assert resp.status_code == 200
     assert resp.headers["hx-redirect"] == f"/quiz/{session_id}"
-    session = session_store.get_session(session_id)
+    session = db.get_quiz(session_id)
     assert session["quiz"] == SAMPLE_QUIZ
     assert len(calls) == 1
 
@@ -126,24 +126,27 @@ def test_generate_redirects_to_landing_for_unknown_session(client):
     resp = client.post("/generate/does-not-exist")
 
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/?flash=session_expired"
+    assert resp.headers["location"] == "/?flash=quiz_not_found"
 
 
 def test_generate_returns_202_without_recalling_claude_when_already_in_progress(client, monkeypatch):
     session_id = _create_session(client)
     calls = []
     monkeypatch.setattr(main, "generate_quiz", lambda text: (calls.append(text), SAMPLE_QUIZ)[1])
-    session = session_store.get_session(session_id)
-    session["_generating"] = True
-
-    resp = client.post(f"/generate/{session_id}")
+    # Simulate another in-flight poll already having claimed this quiz — the
+    # in-progress lock is a plain in-memory set now, not a persisted field.
+    main._generating.add(session_id)
+    try:
+        resp = client.post(f"/generate/{session_id}")
+    finally:
+        main._generating.discard(session_id)
 
     assert resp.status_code == 202
     assert resp.headers["hx-reswap"] == "none"
     assert len(calls) == 0
 
 
-def test_generate_clears_in_progress_flag_after_failure(client, monkeypatch):
+def test_generate_clears_in_progress_lock_after_failure(client, monkeypatch):
     session_id = _create_session(client)
 
     def _raise(text):
@@ -152,5 +155,4 @@ def test_generate_clears_in_progress_flag_after_failure(client, monkeypatch):
     monkeypatch.setattr(main, "generate_quiz", _raise)
     client.post(f"/generate/{session_id}")
 
-    session = session_store.get_session(session_id)
-    assert session["_generating"] is False
+    assert session_id not in main._generating

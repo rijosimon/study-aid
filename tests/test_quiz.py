@@ -1,8 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
+import db
 import main
-import session_store
 from main import app
 
 SAMPLE_QUIZ = [
@@ -37,9 +37,9 @@ SAMPLE_QUIZ = [
 
 @pytest.fixture(autouse=True)
 def clear_store():
-    session_store._store.clear()
+    db.reset_db()
     yield
-    session_store._store.clear()
+    db.reset_db()
 
 
 @pytest.fixture
@@ -48,10 +48,9 @@ def client():
 
 
 def _session_with_quiz(client) -> str:
-    session = session_store.create_session()
-    session["source_text"] = "some source text"
+    session = db.create_quiz("some source text")
     session["quiz"] = [dict(q) for q in SAMPLE_QUIZ]
-    client.cookies.set("session_id", session["session_id"])
+    db.save_quiz(session)
     return session["session_id"]
 
 
@@ -64,15 +63,14 @@ def test_quiz_page_renders_first_question_and_creates_attempt(client):
     assert "Which pigment absorbs light" in resp.text
     assert "Question 1 of 3" in resp.text
 
-    session = session_store.get_session(session_id)
+    session = db.get_quiz(session_id)
     assert len(session["attempts"]) == 1
     assert session["attempts"][0]["mode"] == "practice"
     assert session["attempts"][0]["answers"] == {}
 
 
 def test_quiz_page_redirects_to_generating_if_no_quiz_yet(client):
-    session = session_store.create_session()
-    session["source_text"] = "some source text"
+    session = db.create_quiz("some source text")
 
     resp = client.get(f"/quiz/{session['session_id']}")
 
@@ -84,7 +82,7 @@ def test_quiz_page_redirects_to_landing_for_unknown_session(client):
     resp = client.get("/quiz/does-not-exist")
 
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/?flash=session_expired"
+    assert resp.headers["location"] == "/?flash=quiz_not_found"
 
 
 def test_answer_correct_mc_returns_next_question_with_feedback(client):
@@ -118,7 +116,7 @@ def test_answer_true_false_is_case_insensitive(client):
     resp = client.post(f"/answer/{session_id}", data={"question_id": "q2", "user_answer": "FALSE"})
 
     assert "Correct!" in resp.text
-    session = session_store.get_session(session_id)
+    session = db.get_quiz(session_id)
     assert session["attempts"][-1]["answers"]["q2"]["correct"] is True
 
 
@@ -143,7 +141,7 @@ def test_answer_short_answer_uses_grade_short_answer(client, monkeypatch):
     # last question -> redirect to results, not a rendered partial
     assert resp.headers["hx-redirect"] == f"/results/{session_id}"
 
-    session = session_store.get_session(session_id)
+    session = db.get_quiz(session_id)
     answer = session["attempts"][-1]["answers"]["q3"]
     assert answer["correct"] is True
     assert answer["user_answer"] == "Metaphase, I think"
@@ -182,7 +180,7 @@ def test_answer_unknown_session_redirects_to_landing(client):
     resp = client.post("/answer/does-not-exist", data={"question_id": "q1", "user_answer": "x"})
 
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/?flash=session_expired"
+    assert resp.headers["location"] == "/?flash=quiz_not_found"
 
 
 def test_full_practice_quiz_walkthrough_populates_all_answers(client, monkeypatch):
@@ -201,7 +199,7 @@ def test_full_practice_quiz_walkthrough_populates_all_answers(client, monkeypatc
     r3 = client.post(f"/answer/{session_id}", data={"question_id": "q3", "user_answer": "no idea"})
     assert r3.headers["hx-redirect"] == f"/results/{session_id}"
 
-    session = session_store.get_session(session_id)
+    session = db.get_quiz(session_id)
     answers = session["attempts"][-1]["answers"]
     assert set(answers.keys()) == {"q1", "q2", "q3"}
     assert answers["q1"]["correct"] is True
