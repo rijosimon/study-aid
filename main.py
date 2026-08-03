@@ -18,8 +18,10 @@ from db import (
     delete_quiz,
     find_quiz_by_content_hash,
     get_quiz,
+    get_quiz_summary,
     init_db,
     list_quizzes,
+    rename_quiz,
     save_quiz,
 )
 from parsers import ExtractionError, extract_docx, extract_pdf, extract_text
@@ -105,13 +107,21 @@ def _quiz_status_label(summary: dict) -> str:
     return f"{round(summary['latest_score'] * 100)}% ({summary['latest_mode'].capitalize()})"
 
 
+def _quiz_card(summary: dict) -> dict:
+    """Everything templates/partials/quiz_card.html needs to render one
+    dashboard card — shared by /dashboard (the full list) and the rename
+    routes below (which only need to re-render a single card)."""
+    return {
+        **summary,
+        "href": _quiz_destination(summary),
+        "status_label": _quiz_status_label(summary),
+        "display_name": summary.get("name") or summary["preview"],
+    }
+
+
 @app.get("/dashboard")
 async def dashboard(request: Request):
-    cards = [
-        {**summary, "href": _quiz_destination(summary), "status_label": _quiz_status_label(summary)}
-        for summary in list_quizzes()
-    ]
-
+    cards = [_quiz_card(summary) for summary in list_quizzes()]
     return templates.TemplateResponse(request, "dashboard.html", {"quizzes": cards})
 
 
@@ -119,6 +129,41 @@ async def dashboard(request: Request):
 async def delete_quiz_route(session_id: str):
     delete_quiz(session_id)
     return Response(status_code=200)
+
+
+@app.get("/quiz/{session_id}/card")
+async def quiz_card_partial(request: Request, session_id: str):
+    """Re-renders a single dashboard card in its normal (non-editing) state
+    — used by the rename form's Cancel control to swap back without
+    persisting anything."""
+    summary = get_quiz_summary(session_id)
+    if summary is None:
+        return _quiz_not_found_redirect()
+    return templates.TemplateResponse(
+        request, "partials/quiz_card.html", {"quiz": _quiz_card(summary), "editing": False}
+    )
+
+
+@app.get("/quiz/{session_id}/name/edit")
+async def quiz_name_edit(request: Request, session_id: str):
+    summary = get_quiz_summary(session_id)
+    if summary is None:
+        return _quiz_not_found_redirect()
+    return templates.TemplateResponse(
+        request, "partials/quiz_card.html", {"quiz": _quiz_card(summary), "editing": True}
+    )
+
+
+@app.post("/quiz/{session_id}/name")
+async def quiz_name_save(request: Request, session_id: str, name: str = Form("")):
+    summary = get_quiz_summary(session_id)
+    if summary is None:
+        return _quiz_not_found_redirect()
+    rename_quiz(session_id, name)
+    updated_summary = get_quiz_summary(session_id)
+    return templates.TemplateResponse(
+        request, "partials/quiz_card.html", {"quiz": _quiz_card(updated_summary), "editing": False}
+    )
 
 
 @app.get("/health")

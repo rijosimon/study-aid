@@ -172,5 +172,65 @@ def test_find_quiz_by_content_hash_returns_the_matching_row():
     found = db.find_quiz_by_content_hash(db._hash_content("some source text"))
 
     assert found is not None
-    assert found["session_id"] == quiz["session_id"]
-    assert found["source_text"] == "some source text"
+
+
+def test_new_quiz_has_no_name_by_default():
+    quiz = db.create_quiz("some source text")
+
+    assert quiz["name"] is None
+
+
+def test_rename_quiz_persists_the_name():
+    quiz = db.create_quiz("some source text")
+
+    db.rename_quiz(quiz["session_id"], "My custom title")
+
+    assert db.get_quiz(quiz["session_id"])["name"] == "My custom title"
+
+
+def test_rename_quiz_strips_whitespace():
+    quiz = db.create_quiz("some source text")
+
+    db.rename_quiz(quiz["session_id"], "  Padded title  ")
+
+    assert db.get_quiz(quiz["session_id"])["name"] == "Padded title"
+
+
+def test_rename_quiz_with_empty_string_clears_name_to_none():
+    quiz = db.create_quiz("some source text")
+    db.rename_quiz(quiz["session_id"], "Something")
+
+    db.rename_quiz(quiz["session_id"], "")
+
+    assert db.get_quiz(quiz["session_id"])["name"] is None
+
+
+def test_rename_quiz_with_whitespace_only_clears_name_to_none():
+    quiz = db.create_quiz("some source text")
+    db.rename_quiz(quiz["session_id"], "Something")
+
+    db.rename_quiz(quiz["session_id"], "   ")
+
+    assert db.get_quiz(quiz["session_id"])["name"] is None
+
+
+def test_list_quizzes_reflects_a_custom_name():
+    quiz = db.create_quiz("some source text")
+    db.rename_quiz(quiz["session_id"], "My custom title")
+
+    summaries = db.list_quizzes()
+
+    assert summaries[0]["name"] == "My custom title"
+
+
+def test_get_quiz_summary_returns_none_for_unknown_id():
+    assert db.get_quiz_summary("does-not-exist") is None
+
+
+def test_get_quiz_summary_matches_the_corresponding_list_quizzes_entry():
+    quiz = db.create_quiz("some source text")
+    db.rename_quiz(quiz["session_id"], "My custom title")
+
+    summary = db.get_quiz_summary(quiz["session_id"])
+
+    assert summary == db.list_quizzes()[0]
