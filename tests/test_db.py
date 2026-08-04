@@ -98,14 +98,20 @@ def test_list_quizzes_empty_when_no_quizzes():
     assert db.list_quizzes() == []
 
 
-def test_list_quizzes_truncates_long_preview():
-    long_text = "word " * 100
-    db.create_quiz(long_text)
+def test_list_quizzes_truncates_preview_to_three_words():
+    db.create_quiz("Photosynthesis converts light energy into chemical energy.")
 
     summary = db.list_quizzes()[0]
 
-    assert len(summary["preview"]) == db.PREVIEW_LENGTH + 1  # + the ellipsis char
-    assert summary["preview"].endswith("…")
+    assert summary["preview"] == "Photosynthesis converts light…"
+
+
+def test_list_quizzes_preview_has_no_ellipsis_when_three_words_or_fewer():
+    db.create_quiz("Short title here")
+
+    summary = db.list_quizzes()[0]
+
+    assert summary["preview"] == "Short title here"
 
 
 def test_list_quizzes_reflects_generation_state():

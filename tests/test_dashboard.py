@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import db
+import main
 from main import app
 
 
@@ -34,8 +35,9 @@ def test_dashboard_lists_quizzes_with_preview_and_status(client):
     resp = client.get("/dashboard")
 
     assert resp.status_code == 200
-    assert "Photosynthesis converts light energy" in resp.text
-    assert "90% (Practice)" in resp.text
+    assert "Photosynthesis converts light…" in resp.text
+    assert 'title="Practice — 90%"' in resp.text
+    assert "90%" in resp.text
 
 
 def test_dashboard_link_points_to_generating_when_quiz_not_ready(client):
@@ -44,7 +46,7 @@ def test_dashboard_link_points_to_generating_when_quiz_not_ready(client):
     resp = client.get("/dashboard")
 
     assert f'href="/generating/{quiz["session_id"]}"' in resp.text
-    assert "Generating…" in resp.text
+    assert 'title="Generating quiz…"' in resp.text
 
 
 def test_dashboard_link_points_to_quiz_when_never_attempted(client):
@@ -55,7 +57,7 @@ def test_dashboard_link_points_to_quiz_when_never_attempted(client):
     resp = client.get("/dashboard")
 
     assert f'href="/quiz/{quiz["session_id"]}"' in resp.text
-    assert "Not yet attempted" in resp.text
+    assert 'title="Not yet attempted"' in resp.text
 
 
 def test_dashboard_link_points_to_quiz_with_mode_when_attempt_in_progress(client):
@@ -67,7 +69,7 @@ def test_dashboard_link_points_to_quiz_with_mode_when_attempt_in_progress(client
     resp = client.get("/dashboard")
 
     assert f'href="/quiz/{quiz["session_id"]}?mode=evaluation"' in resp.text
-    assert "Evaluation in progress" in resp.text
+    assert 'title="Evaluation in progress"' in resp.text
 
 
 def test_dashboard_link_points_to_results_when_attempt_complete(client):
@@ -267,7 +269,7 @@ def test_quiz_name_save_with_empty_name_falls_back_to_preview(client):
     resp = client.post(f"/quiz/{quiz['session_id']}/name", data={"name": ""})
 
     assert resp.status_code == 200
-    assert "Photosynthesis converts light energy" in resp.text
+    assert "Photosynthesis converts light…" in resp.text
     assert db.get_quiz(quiz["session_id"])["name"] is None
 
 
@@ -303,3 +305,136 @@ def test_quiz_card_partial_route_redirects_to_landing_for_unknown_session(client
 
     assert resp.status_code == 303
     assert resp.headers["location"] == "/?flash=quiz_not_found"
+
+
+# --- Epic 9: status dot states ---
+
+
+def test_status_dot_completed_100_percent_is_green_with_no_percentage_text(client):
+    quiz = db.create_quiz("some source text")
+    quiz["quiz"] = [{"id": "q1"}]
+    quiz["attempts"] = [{"mode": "practice", "answers": {"q1": {}}, "overall_score": 1.0}]
+    db.save_quiz(quiz)
+
+    resp = client.get("/dashboard")
+
+    assert "bg-green-500" in resp.text
+    assert 'title="Practice — 100%"' in resp.text  # full detail still in the tooltip
+    # ...but no *visible* percentage span next to a green dot
+    assert '<span class="text-sm font-medium text-gray-500">100%</span>' not in resp.text
+
+
+def test_status_dot_completed_30_percent_is_red_with_percentage_text(client):
+    quiz = db.create_quiz("some source text")
+    quiz["quiz"] = [{"id": "q1"}]
+    quiz["attempts"] = [{"mode": "practice", "answers": {"q1": {}}, "overall_score": 0.3}]
+    db.save_quiz(quiz)
+
+    resp = client.get("/dashboard")
+
+    assert "bg-red-500" in resp.text
+    assert 'title="Practice — 30%"' in resp.text
+    assert "30%" in resp.text
+
+
+def test_status_dot_completed_95_percent_is_also_red_not_a_middle_tier(client):
+    quiz = db.create_quiz("some source text")
+    quiz["quiz"] = [{"id": "q1"}]
+    quiz["attempts"] = [{"mode": "practice", "answers": {"q1": {}}, "overall_score": 0.95}]
+    db.save_quiz(quiz)
+
+    resp = client.get("/dashboard")
+
+    assert "bg-red-500" in resp.text
+    assert "bg-amber-400" not in resp.text
+
+
+def test_status_dot_in_progress_is_amber(client):
+    quiz = db.create_quiz("some source text")
+    quiz["quiz"] = [{"id": "q1"}]
+    quiz["attempts"] = [{"mode": "practice", "answers": {}, "overall_score": None}]
+    db.save_quiz(quiz)
+
+    resp = client.get("/dashboard")
+
+    assert "bg-amber-400" in resp.text
+
+
+def test_status_dot_never_attempted_is_solid_grey_not_pulsing(client):
+    quiz = db.create_quiz("some source text")
+    quiz["quiz"] = [{"id": "q1"}]
+    db.save_quiz(quiz)
+
+    resp = client.get("/dashboard")
+
+    assert "bg-gray-300" in resp.text
+    assert "animate-pulse" not in resp.text
+
+
+def test_status_dot_not_yet_generated_pulses_grey(client):
+    db.create_quiz("some source text")  # no quiz generated yet
+
+    resp = client.get("/dashboard")
+
+    assert "bg-gray-300" in resp.text
+    assert "animate-pulse" in resp.text
+    assert 'title="Generating quiz…"' in resp.text
+
+
+# --- Epic 9: busy state (generate more / regenerate / initial generation in flight) ---
+
+
+def test_status_dot_busy_with_existing_quiz_shows_updating_title(client):
+    quiz = db.create_quiz("some source text")
+    quiz["quiz"] = [{"id": "q1"}]
+    quiz["attempts"] = [{"mode": "practice", "answers": {"q1": {}}, "overall_score": 1.0}]
+    db.save_quiz(quiz)
+
+    main._generating.add(quiz["session_id"])
+    try:
+        resp = client.get("/dashboard")
+    finally:
+        main._generating.discard(quiz["session_id"])
+
+    assert "animate-pulse" in resp.text
+    assert 'title="Updating quiz…"' in resp.text
+    # busy takes priority — the completed-attempt green dot must not show through
+    assert "bg-green-500" not in resp.text
+
+
+def test_card_becomes_noninteractive_while_busy(client):
+    quiz = db.create_quiz("some source text")
+    quiz["quiz"] = [{"id": "q1"}]
+    db.save_quiz(quiz)
+    session_id = quiz["session_id"]
+
+    main._generating.add(session_id)
+    try:
+        resp = client.get("/dashboard")
+    finally:
+        main._generating.discard(session_id)
+
+    assert f'href="/quiz/{session_id}"' not in resp.text
+    assert f'href="/quiz/{session_id}/name/edit"' not in resp.text
+    assert f'href="/quiz/{session_id}/expand"' not in resp.text
+    assert f'href="/quiz/{session_id}/regenerate"' not in resp.text
+    assert f'hx-delete="/quiz/{session_id}"' not in resp.text
+    assert "disabled" in resp.text
+    assert "cursor-not-allowed" in resp.text
+
+
+def test_card_is_interactive_again_once_no_longer_busy(client):
+    quiz = db.create_quiz("some source text")
+    quiz["quiz"] = [{"id": "q1"}]
+    db.save_quiz(quiz)
+    session_id = quiz["session_id"]
+
+    main._generating.add(session_id)
+    client.get("/dashboard")  # busy snapshot, not asserted here
+    main._generating.discard(session_id)
+
+    resp = client.get("/dashboard")
+
+    assert f'href="/quiz/{session_id}"' in resp.text
+    assert f'hx-delete="/quiz/{session_id}"' in resp.text
+    assert "disabled" not in resp.text

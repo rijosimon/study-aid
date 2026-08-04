@@ -161,7 +161,7 @@ def reset_db() -> None:
     conn.commit()
 
 
-PREVIEW_LENGTH = 120
+PREVIEW_WORD_COUNT = 3
 
 
 def _summarize_quiz(quiz: dict) -> dict:
@@ -171,9 +171,9 @@ def _summarize_quiz(quiz: dict) -> dict:
     attempts = quiz["attempts"]
     latest = attempts[-1] if attempts else None
 
-    source_text = (quiz["source_text"] or "").strip()
-    preview = source_text[:PREVIEW_LENGTH]
-    if len(source_text) > PREVIEW_LENGTH:
+    words = (quiz["source_text"] or "").split()
+    preview = " ".join(words[:PREVIEW_WORD_COUNT])
+    if len(words) > PREVIEW_WORD_COUNT:
         preview += "…"
 
     return {

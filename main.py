@@ -97,25 +97,40 @@ async def index(request: Request):
     return templates.TemplateResponse(request, "index.html", {"flash": flash})
 
 
-def _quiz_status_label(summary: dict) -> str:
-    if not summary["has_quiz"]:
-        return "Generating…"
+def _quiz_status_dot(summary: dict, busy: bool) -> dict:
+    """{color, pulse, percent, title} describing a card's status dot. The
+    busy check takes priority over everything else — a quiz's attempts/score
+    data is about to be replaced while Claude is actively working on it
+    (covers first-time generation, "generate more questions", and
+    "regenerate quiz" — all three hold the same `_generating` lock)."""
+    if busy or not summary["has_quiz"]:
+        title = "Updating quiz…" if busy and summary["has_quiz"] else "Generating quiz…"
+        return {"color": "grey", "pulse": True, "percent": None, "title": title}
+
     if summary["latest_mode"] is None:
-        return "Not yet attempted"
+        return {"color": "grey", "pulse": False, "percent": None, "title": "Not yet attempted"}
+
+    mode_label = summary["latest_mode"].capitalize()
     if summary["latest_in_progress"]:
-        return f"{summary['latest_mode'].capitalize()} in progress"
-    return f"{round(summary['latest_score'] * 100)}% ({summary['latest_mode'].capitalize()})"
+        return {"color": "amber", "pulse": False, "percent": None, "title": f"{mode_label} in progress"}
+
+    percent = round(summary["latest_score"] * 100)
+    if percent == 100:
+        return {"color": "green", "pulse": False, "percent": None, "title": f"{mode_label} — 100%"}
+    return {"color": "red", "pulse": False, "percent": percent, "title": f"{mode_label} — {percent}%"}
 
 
 def _quiz_card(summary: dict) -> dict:
     """Everything templates/partials/quiz_card.html needs to render one
     dashboard card — shared by /dashboard (the full list) and the rename
     routes below (which only need to re-render a single card)."""
+    busy = summary["session_id"] in _generating
     return {
         **summary,
         "href": _quiz_destination(summary),
-        "status_label": _quiz_status_label(summary),
+        "status_dot": _quiz_status_dot(summary, busy),
         "display_name": summary.get("name") or summary["preview"],
+        "busy": busy,
     }
 
 
